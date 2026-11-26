@@ -31,17 +31,28 @@
 
     <form id="create" class="block create" novalidate>
       <div class="step">
-        <div class="step-head"><span class="num">1</span><h2>Pick a theme</h2></div>
-        <div class="themes" id="themes" role="radiogroup" aria-label="Theme"></div>
+        <div class="step-head"><span class="num">1</span><h2>Choose your sounds</h2></div>
+        <p class="muted" id="layerHint"></p>
+        <div class="themes" id="themes" role="group" aria-label="Sounds"></div>
+        <div class="mixbar" id="mixbar" hidden>
+          <button type="button" class="btn" id="previewMix">▶ Hear them together</button>
+          <span class="muted small" id="mixSummary"></span>
+        </div>
       </div>
 
       <div class="step">
-        <div class="step-head"><span class="num">2</span><h2>Add voice clips</h2></div>
+        <div class="step-head"><span class="num">2</span><h2>Little moments <span class="optional">optional</span></h2></div>
+        <p class="muted">A soft chime or a few music-box notes, now and then, in the quiet stretches between voices.</p>
+        <div class="lengths" id="moments" role="radiogroup" aria-label="Little moments"></div>
+      </div>
+
+      <div class="step">
+        <div class="step-head"><span class="num">3</span><h2>Add recordings</h2></div>
         <p class="muted" id="clipHint"></p>
         <label class="drop" id="drop">
           <input type="file" id="fileInput" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.opus,.webm,.mp4,.mov,.caf" multiple hidden>
           <strong>Choose files</strong> or drop them here
-          <span class="muted small">Voice memos, phone videos, any common audio format. Up to 60 MB each.</span>
+          <span class="muted small">Voice memos or phone videos. From a video we only use the sound.</span>
         </label>
         <div class="or-record">
           <button type="button" class="btn ghost" id="recordBtn">● Record a clip</button>
@@ -51,13 +62,13 @@
       </div>
 
       <div class="step">
-        <div class="step-head"><span class="num">3</span><h2>Choose a length</h2></div>
+        <div class="step-head"><span class="num">4</span><h2>Choose a length</h2></div>
         <div class="lengths" id="lengths" role="radiogroup" aria-label="Length"></div>
-        <p class="muted small">Players can loop it, so even a short soundscape can play all afternoon.</p>
+        <p class="muted small" id="lengthHint">Players can loop it, so even a short soundscape can play all afternoon.</p>
       </div>
 
       <div class="step">
-        <div class="step-head"><span class="num">4</span><h2>Name it</h2></div>
+        <div class="step-head"><span class="num">5</span><h2>Name it</h2></div>
         <input class="text" id="title" maxlength="80" placeholder="e.g. Mia's rainy afternoon">
         <label class="check"><input type="checkbox" id="consent"> I'm a parent or guardian of the children in these recordings and I'm happy to share them with family.</label>
       </div>
@@ -73,6 +84,7 @@
         <p class="eyebrow">Your soundscape is ready</p>
         <h2 id="resultTitle"></h2>
         <audio id="resultAudio" controls preload="metadata"></audio>
+        <div class="timeline" id="timeline" aria-label="Timeline of your soundscape"></div>
         <div class="actions">
           <a class="btn primary" id="downloadLink" href="#">Download MP3</a>
           <a class="btn" id="openLink" href="#" target="_blank" rel="noopener">Open player page</a>
@@ -99,7 +111,8 @@
     <form method="dialog">
       <h2>Little Echoes Plus</h2>
       <ul class="perks">
-        <li>All themes, including Forest Morning, Cosy Fireplace and Starry Night</li>
+        <li>All sounds, including Forest Morning, Cosy Fireplace, Starry Night and Soft Wind</li>
+        <li>Layer up to 3 sounds at once</li>
         <li>Up to 8 voice clips per soundscape</li>
         <li>Soundscapes up to 15 minutes</li>
       </ul>

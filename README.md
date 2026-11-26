@@ -7,11 +7,12 @@ Parents upload candid recordings of their kids. The app blends them with a soft 
 ## The flow
 
 1. **Listen to examples**: the home page plays sample soundscapes (or theme previews until you add real examples).
-2. **Pick a theme**: Gentle Rain, Ocean Waves and Lullaby Glow are free. Forest Morning, Cosy Fireplace and Starry Night are Plus.
-3. **Add voice clips**: upload files (voice memos, phone videos, any common format) or record in the browser. 2 clips free, up to 8 on Plus.
-4. **Choose a length**: 1 to 3 minutes free, 5 / 10 / 15 minutes on Plus.
-5. **Name it** and tick the parent/guardian permission box.
-6. **Create**: you get a player, a Download button, and a link like `/s/AbC123xyz_-Q` that opens a full-screen player with a big play button, looping on by default and the screen kept awake while it plays.
+2. **Choose your sounds**: layer up to 2 sounds (free) or 3 (Plus), each with its own volume, and hear them together before you create. Gentle Rain, Ocean Waves, Lullaby Glow and Music Box are free. Forest Morning, Cosy Fireplace, Starry Night and Soft Wind are Plus.
+3. **Little moments** (optional): wind chimes, a music-box phrase or a singing bowl, placed now and then in the quiet stretches between voices.
+4. **Add recordings**: voice memos, phone videos (only the sound is used) or record in the browser. Pick which part of each recording to use (up to 60 s). 2 recordings free, up to 8 on Plus.
+5. **Choose a length**: 1 to 3 minutes free, 5 / 10 / 15 minutes on Plus.
+6. **Name it** and tick the parent/guardian permission box.
+7. **Create**: you get a player, a timeline showing where each voice, sound and moment lands, a Download button, and a link like `/s/AbC123xyz_-Q` that opens a full-screen player with a big play button, looping on by default and the screen kept awake while it plays.
 
 ## Run it
 
@@ -34,16 +35,19 @@ Settings (environment variables):
 
 ## How the mix works (`src/mixer.js`)
 
-1. Each clip is decoded, silence is trimmed from both ends, rumble and hiss are reduced, loudness is evened out, and it is capped at 45 seconds.
-2. Clips are scattered across the timeline with 10 to 22 seconds of ambience between them, cycling through the clips.
-3. The ambient bed loops to the chosen length and softly dips (sidechain ducking) while a child is speaking.
-4. A 4 second fade in, 6 second fade out, and the whole track is levelled to a calm -20 LUFS, 192 kbps MP3.
+1. Each clip is cut to the chosen part (max 60 s), silence is trimmed from both ends, rumble and hiss are reduced and loudness is evened out.
+2. Voices are laid out with natural, uneven gaps (mostly 10 to 20 s, sometimes a longer rest). Every recording plays once before any repeats, never the same one twice in a row, each placed slightly left or right at a slightly different level. Gaps shrink automatically so every recording fits if it can.
+3. Up to three ambient layers loop to the chosen length. The first fades in at the start and the others drift in one after another, each slowly "breathing" in volume. Together they dip gently while a child is speaking.
+4. Optional moments (chimes, music box, singing bowl) go in some of the quiet stretches.
+5. A 4 second fade in, 6 second fade out, and the whole track is levelled to a calm -20 LUFS, 192 kbps MP3.
+
+Phone videos are decoded in the browser where possible, so only the chosen few seconds of sound are uploaded. If the browser can't read a file, the original is uploaded (up to 250 MB) and the server extracts the sound.
 
 A 3 minute mix takes about 5 seconds on a small server.
 
 ## Ambient sounds
 
-All six beds in `public/beds/` are **synthesised from scratch** by `scripts/make-beds.js` (noise, filters, sine pads, generated bird chirps and crackles), so there are no licensing questions. Each is a seamless 60 second loop. To regenerate after editing a recipe: `npm run beds`. To add a theme, add it to `src/themes.js` and a matching recipe in `scripts/make-beds.js`. You could also swap in recorded beds (for example CC0 field recordings) by dropping a 60 second loopable MP3 at `public/beds/<theme-id>.mp3`.
+All eight beds in `public/beds/` and the moments in `public/moments/` are **synthesised from scratch** by `scripts/make-beds.js` (noise, filters, sine pads, generated bird chirps and crackles), so there are no licensing questions. Each is a seamless 60 second loop. To regenerate after editing a recipe: `npm run beds`. To add a theme, add it to `src/themes.js` and a matching recipe in `scripts/make-beds.js`. You could also swap in recorded beds (for example CC0 field recordings) by dropping a 60 second loopable MP3 at `public/beds/<theme-id>.mp3`.
 
 ## Real examples
 

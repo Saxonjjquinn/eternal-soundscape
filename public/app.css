@@ -137,3 +137,37 @@ dialog { border: none; border-radius: 24px; padding: 26px; max-width: 420px; wid
 dialog::backdrop { background: rgba(27, 23, 36, .55); }
 .perks { padding-left: 20px; }
 .perks li { margin: 6px 0; }
+
+/* ---------- layers, moments, trimming, timeline ---------- */
+.optional { font-family: Nunito, sans-serif; font-size: .8rem; font-weight: 600; color: var(--muted); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; vertical-align: middle; }
+.theme[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent); }
+.theme .layer-no { position: absolute; top: 10px; right: 10px; width: 28px; height: 28px; border-radius: 50%; background: #fff; color: #2f2540; display: grid; place-items: center; font-weight: 700; font-size: .9rem; }
+.theme .vol { display: flex; align-items: center; gap: 8px; font-size: .8rem; font-weight: 700; background: rgba(0,0,0,.28); border-radius: 999px; padding: 4px 10px; }
+.theme .vol input { flex: 1; min-width: 0; accent-color: #fff; }
+.mixbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+.moment-opt { display: inline-flex; align-items: center; gap: 8px; padding: 0 8px 0 16px; }
+.moment-opt .play { width: 32px; height: 32px; box-shadow: none; background: var(--accent-soft); color: var(--accent); }
+.moment-opt .play svg { width: 13px; height: 13px; }
+.moment-opt[aria-checked="true"] .play { background: #fff; }
+.len.moment-opt { min-width: 0; }
+
+.clip .meta { color: var(--muted); font-size: .85rem; grid-column: 1 / -1; }
+.clip .trim { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; font-size: .85rem; }
+.clip .trim input { width: 100%; accent-color: var(--accent); }
+.clip .trim output { font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
+.clip .part { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.clip .busy { grid-column: 1 / -1; color: var(--accent); font-weight: 700; font-size: .9rem; }
+.warn { color: #9a5b00; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .warn { color: #ffcc80; } }
+
+.timeline { display: grid; gap: 6px; padding: 12px; border-radius: 14px; background: var(--bg); font-size: .78rem; }
+.tl-row { display: grid; grid-template-columns: 86px 1fr; align-items: center; gap: 8px; }
+.tl-label { color: var(--muted); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-track { position: relative; height: 18px; border-radius: 6px; background: color-mix(in srgb, var(--line) 60%, transparent); overflow: hidden; }
+.tl-block { position: absolute; top: 2px; bottom: 2px; border-radius: 4px; }
+.tl-dot { position: absolute; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.tl-axis { position: relative; height: 14px; color: var(--muted); }
+.tl-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.tl-axis span:first-child { transform: none; }
+.tl-head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); opacity: .7; pointer-events: none; }
+@media (max-width: 480px) { .tl-row { grid-template-columns: 64px 1fr; } }

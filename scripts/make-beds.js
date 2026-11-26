@@ -194,6 +194,34 @@ const recipes = {
     add(out.L, warm); add(out.R, warm);
     return out;
   },
+  'music-box'(R) {
+    const notes = buf();
+    // slow pentatonic phrases with long rests; period 60s so it loops cleanly
+    let t = 0.8;
+    while (t < LOOP - 1) {
+      const phrase = 3 + Math.floor(R() * 4);
+      let idx = Math.floor(R() * 5);
+      for (let k = 0; k < phrase && t < LOOP - 1; k++) {
+        idx = Math.max(0, Math.min(PENTA.length - 1, idx + (R() < 0.5 ? -1 : 1) * (1 + Math.floor(R() * 2))));
+        pluck(notes, t, PENTA[idx] * 2, 0.16, 1.8);
+        t += 0.55 + R() * 0.35;
+      }
+      t += 3 + R() * 4;
+    }
+    lowpass(notes, 5000);
+    const air = lowpass(pink(R), 400);
+    const L = add(Float32Array.from(notes), air, 0.02);
+    const Rr = add(Float32Array.from(notes), air, 0.02);
+    return { L, R: Rr };
+  },
+  'soft-wind'(R) {
+    const mk = (ph) => {
+      const n = lowpass(highpass(pink(R), 120), 900);
+      add(n, lowpass(highpass(pink(R), 1500), 3000), 0.15);
+      return modulate(n, (i) => 0.45 + 0.35 * (0.5 + 0.5 * lfo(i, 12, ph)) + 0.2 * lfo(i, 30, ph * 2));
+    };
+    return { L: mk(0), R: mk(1.9) };
+  },
   'starry-night'(R) {
     const p = pad([110, 164.81, 246.94, 329.63], 0.45, 20);
     const crickets = (ph, f) => {
@@ -247,15 +275,70 @@ const outDir = path.join(__dirname, '..', 'public', 'beds');
 fs.mkdirSync(outDir, { recursive: true });
 const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'beds-'));
 
-THEMES.forEach((theme, idx) => {
+const only = process.argv.slice(2);
+THEMES.filter((t) => !only.length || only.includes(t.id)).forEach((theme) => {
   const recipe = recipes[theme.id];
   if (!recipe) throw new Error(`No recipe for ${theme.id}`);
-  const { L, R } = recipe(rng(1234 + idx * 77));
+  const seed = [...theme.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+  const { L, R } = recipe(rng(seed));
   const wav = path.join(tmp, `${theme.id}.wav`);
   writeWav(wav, makeLoop(L), makeLoop(R));
   const mp3 = path.join(outDir, `${theme.id}.mp3`);
   // bring every bed to the same perceived loudness
   execFileSync(ffmpeg, ['-y', '-loglevel', 'error', '-i', wav, '-af', 'loudnorm=I=-23:TP=-2:LRA=11', '-ar', '44100', '-b:a', '192k', mp3]);
   console.log('wrote', path.relative(process.cwd(), mp3));
+});
+// ---------- one-off "moments" ----------
+function momentBuffers(id, variant) {
+  const R = rng(9000 + variant * 131 + id.length * 17);
+  const secs = id === 'bowl' ? 9 : 6;
+  const n = SR * secs;
+  const L = new Float32Array(n), Rr = new Float32Array(n);
+  const tone = (start, f, gain, decay, pan, partials) => {
+    for (let j = Math.floor(start * SR); j < n; j++) {
+      const t = j / SR - start;
+      const env = Math.min(1, t / 0.003) * Math.exp(-t / decay);
+      if (env < 1e-4 && t > 0.1) break;
+      let v = 0;
+      partials.forEach(([m, g, dm]) => { v += Math.sin(2 * Math.PI * f * m * t) * g * Math.exp(-t / (decay * dm)); });
+      L[j] += v * env * gain * (1 - pan);
+      Rr[j] += v * env * gain * pan;
+    }
+  };
+  if (id === 'chimes') {
+    const scale = [1046.5, 1174.7, 1318.5, 1568, 1760, 2093];
+    const hits = 4 + Math.floor(R() * 4);
+    let t = 0.05;
+    for (let k = 0; k < hits; k++) {
+      tone(t, scale[Math.floor(R() * scale.length)], 0.18, 1.4, 0.3 + R() * 0.4, [[1, 1, 1], [2.76, 0.35, 0.5], [5.4, 0.12, 0.3]]);
+      t += 0.12 + R() * 0.45;
+    }
+  } else if (id === 'musicbox') {
+    let idx = 2 + Math.floor(R() * 3);
+    let t = 0.05;
+    const notes = 4 + Math.floor(R() * 3);
+    for (let k = 0; k < notes; k++) {
+      idx = Math.max(0, Math.min(PENTA.length - 1, idx + (R() < 0.5 ? -1 : 1)));
+      tone(t, PENTA[idx] * 2, 0.22, 0.9, 0.5, [[1, 1, 1], [2, 0.25, 0.4], [3, 0.08, 0.3]]);
+      t += 0.38 + R() * 0.2;
+    }
+  } else if (id === 'bowl') {
+    const f = [174.6, 196, 220.0][variant % 3];
+    tone(0.05, f, 0.35, 3.2, 0.5, [[1, 1, 1], [2.71, 0.45, 0.6], [5.1, 0.18, 0.35], [1.006, 0.6, 1]]);
+  }
+  return { L, R: Rr };
+}
+const momentsDir = path.join(__dirname, '..', 'public', 'moments');
+fs.mkdirSync(momentsDir, { recursive: true });
+const { MOMENTS } = require('../src/themes');
+MOMENTS.filter((m) => m.variants).forEach((m) => {
+  for (let v = 1; v <= m.variants; v++) {
+    const { L, R } = momentBuffers(m.id, v);
+    const wav = path.join(tmp, `${m.id}-${v}.wav`);
+    writeWav(wav, L, R);
+    const out = path.join(momentsDir, `${m.id}-${v}.mp3`);
+    execFileSync(ffmpeg, ['-y', '-loglevel', 'error', '-i', wav, '-af', 'aecho=0.8:0.6:70|140:0.25|0.15,loudnorm=I=-24:TP=-3', '-ar', '44100', '-b:a', '160k', out]);
+  }
+  console.log('wrote moments', m.id);
 });
 fs.rmSync(tmp, { recursive: true, force: true });
