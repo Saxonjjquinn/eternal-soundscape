@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const multer = require('multer');
-const { THEMES, MOMENTS, TIERS, MAX_CLIP_SECONDS } = require('./themes');
+const { THEMES, MOMENTS, COMBOS, TIERS, MAX_CLIP_SECONDS } = require('./themes');
 const { mix } = require('./mixer');
 
 const ROOT = path.join(__dirname, '..');
@@ -62,7 +62,7 @@ app.get('/api/config', (req, res) => {
   const examplesFile = path.join(PUBLIC, 'examples', 'examples.json');
   let examples = [];
   try { examples = JSON.parse(fs.readFileSync(examplesFile, 'utf8')); } catch {}
-  res.json({ themes: THEMES, moments: MOMENTS, tiers: TIERS, maxClipSeconds: MAX_CLIP_SECONDS, examples });
+  res.json({ themes: THEMES, moments: MOMENTS, combos: COMBOS, tiers: TIERS, maxClipSeconds: MAX_CLIP_SECONDS, examples });
 });
 
 app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {

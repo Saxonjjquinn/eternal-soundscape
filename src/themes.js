@@ -32,6 +32,16 @@ const MOMENTS = [
   { id: 'bowl', name: 'Singing bowl', variants: 3 },
 ];
 
+// Ready-made combinations shown at the top of the page. Levels are 0.25–1.
+const COMBOS = [
+  { id: 'rainy-afternoon', name: 'Rainy Afternoon', blurb: 'Soft rain with warm lo-fi keys.', ambience: ['gentle-rain'], music: 'lofi-jazz-house', bgLevel: 0.5, musicLevel: 0.5 },
+  { id: 'sunday-morning', name: 'Sunday Morning', blurb: 'Birds outside and a slow piano.', ambience: ['distant-birds'], music: 'classical-piano', bgLevel: 0.5, musicLevel: 0.5 },
+  { id: 'sleepy-time', name: 'Sleepy Time', blurb: 'A gentle fan and a lullaby glow.', ambience: ['fan-hum'], music: 'lullaby-glow', bgLevel: 0.5, musicLevel: 0.25 },
+  { id: 'by-the-sea', name: 'By the Sea', blurb: 'Waves rolling in, a few music-box notes.', ambience: ['ocean-waves'], music: 'music-box', bgLevel: 0.5, musicLevel: 0.5 },
+  { id: 'late-night', name: 'Late Night', blurb: 'A crackling fire and quiet jazz.', ambience: ['cosy-fireplace'], music: 'late-night-jazz', bgLevel: 0.5, musicLevel: 0.5 },
+  { id: 'starlight', name: 'Starlight', blurb: 'Crickets, stars and hazy electronic chords.', ambience: ['starry-night'], music: 'lofi-electronic', bgLevel: 0.5, musicLevel: 0.5 },
+];
+
 // Limits for each tier. Plus is a placeholder until payments exist.
 const TIERS = {
   free: { maxClips: 2, minMinutes: 1, maxMinutes: 3, maxLayers: 2 },
@@ -40,4 +50,4 @@ const TIERS = {
 
 const MAX_CLIP_SECONDS = 60; // longest stretch of a single recording we use
 
-module.exports = { THEMES, MOMENTS, TIERS, MAX_CLIP_SECONDS };
+module.exports = { THEMES, MOMENTS, COMBOS, TIERS, MAX_CLIP_SECONDS };

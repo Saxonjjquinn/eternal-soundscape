@@ -23,35 +23,15 @@
       <a class="btn primary" href="#create">Make one now</a>
     </section>
 
-    <section class="block" id="examples">
-      <h2>Listen to examples</h2>
-      <p class="muted" id="examplesNote"></p>
-      <div class="examples" id="examplesList"></div>
+    <section class="block" id="combos">
+      <h2>Not sure where to start?</h2>
+      <p class="muted">Don't worry. Here are a few of our favourite combinations. Pick one you love and all you need to add is your recording.</p>
+      <div class="examples" id="comboList"></div>
     </section>
 
     <form id="create" class="block create" novalidate>
       <div class="step">
-        <div class="step-head"><span class="num">1</span><h2>Choose your sounds</h2></div>
-        <p class="muted" id="layerHint"></p>
-        <div class="theme-groups" id="themes" role="group" aria-label="Sounds"></div>
-        <div class="mixbar" id="mixbar" hidden>
-          <button type="button" class="btn" id="previewMix">▶ Hear them together</button>
-          <span class="muted small" id="mixSummary"></span>
-        </div>
-        <div class="bedlevel">
-          <span class="bedlevel-label">How loud should the sounds be under the voices?</span>
-          <div class="lengths" id="bedLevel" role="radiogroup" aria-label="Background level"></div>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-head"><span class="num">2</span><h2>Little moments <span class="optional">optional</span></h2></div>
-        <p class="muted">A soft chime or a few music-box notes, now and then, in the quiet stretches between voices.</p>
-        <div class="lengths" id="moments" role="radiogroup" aria-label="Little moments"></div>
-      </div>
-
-      <div class="step">
-        <div class="step-head"><span class="num">3</span><h2>Add recordings</h2></div>
+        <div class="step-head"><span class="num">1</span><h2>Upload your recordings</h2></div>
         <p class="muted" id="clipHint"></p>
         <label class="drop" id="drop">
           <input type="file" id="fileInput" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.opus,.webm,.mp4,.mov,.caf" multiple hidden>
@@ -66,18 +46,48 @@
       </div>
 
       <div class="step">
-        <div class="step-head"><span class="num">4</span><h2>Choose a length</h2></div>
+        <div class="step-head"><span class="num">2</span><h2>Add background sounds</h2></div>
+        <p class="muted" id="bgHint"></p>
+        <div class="themes" id="bgList" role="group" aria-label="Background sounds"></div>
+        <div class="subq">
+          <span class="subq-label">Little moments <span class="optional">optional</span></span>
+          <span class="muted small">A soft chime or a few music-box notes, now and then, between voices.</span>
+          <div class="lengths" id="moments" role="radiogroup" aria-label="Little moments"></div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-head"><span class="num">3</span><h2>Choose the volume</h2></div>
+        <p class="muted">How loud should the background sounds be under the voices?</p>
+        <div class="lengths" id="bgLevel" role="radiogroup" aria-label="Background sound volume"></div>
+      </div>
+
+      <div class="step">
+        <div class="step-head"><span class="num">4</span><h2>Add music</h2></div>
+        <p class="muted" id="musicHint"></p>
+        <div class="themes" id="musicList" role="group" aria-label="Music"></div>
+      </div>
+
+      <div class="step">
+        <div class="step-head"><span class="num">5</span><h2>Choose the volume</h2></div>
+        <p class="muted">How loud should the music be under the voices?</p>
+        <div class="lengths" id="musicLevel" role="radiogroup" aria-label="Music volume"></div>
+      </div>
+
+      <div class="step">
+        <div class="step-head"><span class="num">6</span><h2>Choose the duration</h2></div>
         <div class="lengths" id="lengths" role="radiogroup" aria-label="Length"></div>
         <p class="muted small" id="lengthHint">Players can loop it, so even a short soundscape can play all afternoon.</p>
       </div>
 
       <div class="step">
-        <div class="step-head"><span class="num">5</span><h2>Name it</h2></div>
+        <div class="step-head"><span class="num">7</span><h2>Name it</h2></div>
         <input class="text" id="title" maxlength="80" placeholder="e.g. Mia's rainy afternoon">
         <label class="check"><input type="checkbox" id="consent"> I'm a parent or guardian of the children in these recordings and I'm happy to share them with family.</label>
       </div>
 
       <div class="submit-row">
+        <div class="step-head"><span class="num">8</span><h2>Create your soundscape</h2></div>
         <button class="btn primary big" id="submitBtn" type="submit">Create my soundscape</button>
         <p class="error" id="formError" role="alert"></p>
       </div>
@@ -103,6 +113,11 @@
 
   <footer class="foot muted small">Prototype. Ambient sounds are generated by Little Echoes. Uploaded recordings are deleted once your mix is made.</footer>
 
+  <div class="livebar" id="livebar" hidden>
+    <button type="button" class="live-play" id="livePlay" aria-label="Listen to your mix">▶</button>
+    <div class="live-text"><strong id="liveTitle">Listen to your mix</strong><span class="muted small" id="liveSummary"></span></div>
+  </div>
+
   <div class="overlay" id="working" hidden>
     <div class="working-card">
       <div class="breath"></div>
@@ -116,7 +131,7 @@
       <h2>Little Echoes Plus</h2>
       <ul class="perks">
         <li>All sounds, including Forest Morning, Cosy Fireplace, Starry Night and Soft Wind</li>
-        <li>Layer up to 3 sounds at once</li>
+        <li>Use up to 3 sounds at once</li>
         <li>Up to 8 voice clips per soundscape</li>
         <li>Soundscapes up to 15 minutes</li>
       </ul>

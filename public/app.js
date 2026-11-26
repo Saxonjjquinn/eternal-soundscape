@@ -3,165 +3,322 @@
   const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>';
   const PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
   const LENGTHS = [1, 2, 3, 5, 10, 15];
+  const LEVELS = [0.25, 0.5, 0.75, 1];
   const CLIP_COLORS = ['#e07a5f', '#3d85c6', '#81b29a', '#f2a541', '#9b72cf', '#d1495b', '#2a9d8f', '#c08552'];
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const curve = (level) => Math.pow(level, 1.25); // so each volume step is clearly audible
 
   let config;
-  const state = { layers: [], bedLevel: 0.5, moments: 'none', minutes: 2, clips: [], plus: false };
-  const LEVELS = [0.25, 0.5, 0.75, 1];
+  const state = { ambience: [], music: null, bgLevel: 0.5, musicLevel: 0.5, moments: 'none', minutes: 2, clips: [], plus: false };
   try { state.plus = localStorage.getItem('le-plus') === '1'; } catch {}
   const tier = () => config.tiers[state.plus ? 'plus' : 'free'];
   const themeById = (id) => config.themes.find((t) => t.id === id);
-
-  // ---------- previews: one sound at a time, or the whole selected mix ----------
-  const previews = [];
-  let previewOwner = null; // the button currently showing "pause"
-  function stopPreviews() {
-    previews.splice(0).forEach((a) => { a.pause(); a.src = ''; });
-    if (previewOwner) previewOwner.innerHTML = previewOwner.dataset.label || PLAY;
-    previewOwner = null;
-  }
-  function playPreview(btn, sources, { loop = true } = {}) {
-    const same = previewOwner === btn;
-    stopPreviews();
-    if (same) return;
-    stopClipPreview();
-    sources.forEach(({ src, volume = 1 }) => {
-      const a = new Audio(src);
-      a.loop = loop;
-      a.volume = volume;
-      a.play().catch(() => {});
-      if (!loop) a.addEventListener('ended', () => { if (previewOwner === btn) stopPreviews(); });
-      previews.push(a);
-    });
-    previewOwner = btn;
-    btn.innerHTML = btn.dataset.label ? btn.dataset.label.replace('▶', '■').replace('Hear them together', 'Stop') : PAUSE;
-  }
-
+  const layerCount = () => state.ambience.length + (state.music ? 1 : 0);
   const gradient = (c) => `linear-gradient(135deg, ${c[0]}, ${c[1]})`;
 
-  // ---------- examples ----------
-  function renderExamples() {
-    const list = $('#examplesList');
-    list.innerHTML = '';
-    let items = config.examples;
-    if (!items.length) {
-      $('#examplesNote').textContent = 'Here are the free sounds on their own. Your children\'s voices drift in and out over the top, and the ambience softens while they speak.';
-      items = config.themes.filter((t) => t.free).map((t) => ({ title: t.name, subtitle: 'Ambience only', theme: t.id, src: `/beds/${t.id}.mp3` }));
-    } else {
-      $('#examplesNote').textContent = 'Real soundscapes made with Little Echoes (shared with permission).';
+  // =====================================================================
+  // Live mix: your recordings play with the chosen sounds and music on top.
+  // Volume changes and new sounds are heard straight away.
+  // =====================================================================
+  const live = { ctx: null, playing: false, beds: new Map(), voiceSrc: null, clipIdx: 0, timer: null };
+  function ensureCtx() {
+    if (!live.ctx) {
+      const C = window.AudioContext || window.webkitAudioContext;
+      live.ctx = new C();
+      live.master = live.ctx.createGain();
+      live.master.connect(live.ctx.destination);
+      live.duck = live.ctx.createGain(); // beds dip while a voice plays, like the final mix
+      live.duck.connect(live.master);
+      live.bgBus = live.ctx.createGain();
+      live.musicBus = live.ctx.createGain();
+      live.bgBus.connect(live.duck);
+      live.musicBus.connect(live.duck);
+      live.voice = live.ctx.createGain();
+      live.voice.connect(live.master);
     }
-    items.forEach((ex) => {
-      const t = themeById(ex.theme) || config.themes[0];
+    if (live.ctx.state === 'suspended') live.ctx.resume();
+    return live.ctx;
+  }
+  function applyLevels() {
+    if (!live.ctx) return;
+    const n = Math.max(1, layerCount());
+    const k = 1.1 / Math.sqrt(n);
+    const now = live.ctx.currentTime;
+    live.bgBus.gain.setTargetAtTime(curve(state.bgLevel) * k, now, 0.08);
+    live.musicBus.gain.setTargetAtTime(curve(state.musicLevel) * k, now, 0.08);
+  }
+  function syncBeds() {
+    if (!live.ctx) return;
+    const wanted = new Map(state.ambience.map((id) => [id, live.bgBus]));
+    if (state.music) wanted.set(state.music, live.musicBus);
+    for (const [id, b] of live.beds) {
+      if (!wanted.has(id)) {
+        b.gain.gain.setTargetAtTime(0, live.ctx.currentTime, 0.2);
+        setTimeout(() => { b.el.pause(); b.el.src = ''; }, 900);
+        live.beds.delete(id);
+      }
+    }
+    for (const [id, bus] of wanted) {
+      if (live.beds.has(id)) continue;
+      const el = new Audio(`/beds/${id}.mp3`);
+      el.loop = true;
+      el.crossOrigin = 'anonymous';
+      const src = live.ctx.createMediaElementSource(el);
+      const gain = live.ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(gain).connect(bus);
+      const b = { el, gain };
+      live.beds.set(id, b);
+      if (live.playing) startBed(b);
+    }
+    applyLevels();
+    renderLivebar();
+  }
+  function startBed(b) {
+    b.el.play().catch(() => {});
+    b.gain.gain.setTargetAtTime(1, live.ctx.currentTime, 0.4); // drift in
+  }
+  function duck(on) {
+    if (!live.ctx) return;
+    live.duck.gain.setTargetAtTime(on ? 0.55 : 1, live.ctx.currentTime, on ? 0.08 : 0.6);
+  }
+  function readyClips() { return state.clips.filter((c) => c.status === 'ready' && c.buffer); }
+  function playNextVoice() {
+    clearTimeout(live.timer);
+    if (!live.playing) return;
+    const clips = readyClips();
+    if (!clips.length) { live.timer = setTimeout(playNextVoice, 1500); return; }
+    const c = clips[live.clipIdx % clips.length];
+    live.clipIdx++;
+    const src = live.ctx.createBufferSource();
+    src.buffer = c.buffer;
+    src.connect(live.voice);
+    live.voice.gain.value = c.previewGain || 1;
+    const dur = Math.max(0.3, c.to - c.from);
+    src.start(0, c.from, dur);
+    live.voiceSrc = src;
+    duck(true);
+    renderLivebar(c.name);
+    src.onended = () => {
+      if (live.voiceSrc !== src) return;
+      duck(false);
+      renderLivebar();
+      // a short pause before the next voice (shorter than the real mix so you hear more)
+      const gap = 3500 + Math.random() * 3000;
+      if (state.moments !== 'none' && Math.random() < 0.6) {
+        const m = config.moments.find((x) => x.id === state.moments);
+        setTimeout(() => {
+          if (!live.playing || !m || !m.variants) return;
+          const el = new Audio(`/moments/${m.id}-${1 + Math.floor(Math.random() * m.variants)}.mp3`);
+          el.volume = Math.min(1, 0.35 + 0.5 * curve(state.bgLevel));
+          el.play().catch(() => {});
+        }, gap * 0.3);
+      }
+      live.timer = setTimeout(playNextVoice, gap);
+    };
+  }
+  function startLive() {
+    stopAudition();
+    ensureCtx();
+    syncBeds();
+    live.playing = true;
+    for (const b of live.beds.values()) startBed(b);
+    live.timer = setTimeout(playNextVoice, live.beds.size ? 1800 : 200);
+    renderLivebar();
+  }
+  function stopLive() {
+    live.playing = false;
+    clearTimeout(live.timer);
+    if (live.voiceSrc) { try { live.voiceSrc.stop(); } catch {} live.voiceSrc = null; }
+    for (const b of live.beds.values()) { b.el.pause(); if (live.ctx) b.gain.gain.value = 0; }
+    duck(false);
+    renderLivebar();
+  }
+  // Called after anything changes. Starts listening when there is something to
+  // hear and the change came from a tap, so it feels live.
+  function mixChanged(fromTap) {
+    syncBedsIfReady();
+    if (fromTap && !live.playing && (readyClips().length || layerCount())) startLive();
+    renderLivebar();
+  }
+  function syncBedsIfReady() { if (live.ctx) syncBeds(); }
+
+  function renderLivebar(speaking) {
+    const bar = $('#livebar');
+    const has = readyClips().length || layerCount();
+    bar.hidden = !has || !$('#result').hidden;
+    $('#livePlay').textContent = live.playing ? '❚❚' : '▶';
+    $('#livePlay').setAttribute('aria-label', live.playing ? 'Pause your mix' : 'Listen to your mix');
+    const parts = [];
+    if (readyClips().length) parts.push(`${readyClips().length} recording${readyClips().length > 1 ? 's' : ''}`);
+    state.ambience.forEach((id) => parts.push(themeById(id).name));
+    if (state.music) parts.push(themeById(state.music).name);
+    $('#liveTitle').textContent = live.playing ? (speaking ? `Playing: ${speaking}` : 'Listening to your mix') : 'Listen to your mix';
+    $('#liveSummary').textContent = parts.join(' + ');
+  }
+  $('#livePlay').addEventListener('click', () => (live.playing ? stopLive() : startLive()));
+
+  // ---------- single-sound audition (the ▶ on each card) ----------
+  let audition = null;
+  function stopAudition() {
+    if (audition) { audition.el.pause(); audition.btn.innerHTML = PLAY; audition = null; }
+  }
+  function playAudition(btn, src, { loop = true } = {}) {
+    const same = audition && audition.btn === btn;
+    stopAudition();
+    if (same) return;
+    if (live.playing) stopLive();
+    stopClipPreview();
+    const el = new Audio(src);
+    el.loop = loop;
+    el.play().catch(() => {});
+    el.addEventListener('ended', () => { if (audition && audition.el === el) stopAudition(); });
+    audition = { el, btn };
+    btn.innerHTML = PAUSE;
+  }
+
+  // ---------- favourite combinations ----------
+  function comboLocked(c) {
+    if (state.plus) return false;
+    return [...c.ambience, c.music].some((id) => !themeById(id).free) || c.ambience.length + 1 > config.tiers.free.maxLayers;
+  }
+  function renderCombos() {
+    const list = $('#comboList');
+    list.innerHTML = '';
+    config.combos.forEach((c) => {
+      const m = themeById(c.music);
+      const a = themeById(c.ambience[0]);
+      const locked = comboLocked(c);
       const el = document.createElement('div');
-      el.className = 'example';
-      el.innerHTML = `<div class="art" style="background:${gradient(t.colors)}"></div><div style="flex:1;min-width:0"><h3></h3><p class="muted small"></p></div><button class="play" type="button" aria-label="Play">${PLAY}</button>`;
-      el.querySelector('h3').textContent = ex.title;
-      el.querySelector('p').textContent = ex.subtitle || t.name;
-      const btn = el.querySelector('.play');
-      btn.addEventListener('click', () => playPreview(btn, [{ src: ex.src }]));
+      el.className = 'example combo';
+      el.innerHTML = `<div class="art" style="background:linear-gradient(135deg, ${a.colors[0]}, ${m.colors[1]})"></div>
+        <div class="combo-text"><h3></h3><p class="muted small"></p><p class="small combo-parts"></p></div>
+        <div class="combo-actions"><button class="play" type="button" aria-label="Hear ${c.name}">${PLAY}</button>
+        <button class="btn small-btn" type="button">${locked ? '🔒 Plus' : 'Use this'}</button></div>`;
+      el.querySelector('h3').textContent = c.name;
+      el.querySelectorAll('p')[0].textContent = c.blurb;
+      el.querySelector('.combo-parts').textContent = [...c.ambience.map((id) => themeById(id).name), m.name].join(' + ');
+      const play = el.querySelector('.play');
+      play.addEventListener('click', () => playCombo(play, c));
+      el.querySelector('.small-btn').addEventListener('click', () => {
+        if (locked) return openPlus();
+        state.ambience = [...c.ambience];
+        state.music = c.music;
+        state.bgLevel = c.bgLevel;
+        state.musicLevel = c.musicLevel;
+        stopAudition();
+        renderAll();
+        mixChanged(true);
+        showError('');
+        $('#create').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
       list.appendChild(el);
     });
   }
+  // a combo preview plays its sounds together at the combo's levels
+  let comboAudio = [];
+  function playCombo(btn, c) {
+    const same = audition && audition.btn === btn;
+    stopAudition();
+    comboAudio.forEach((a) => a.pause());
+    comboAudio = [];
+    if (same) return;
+    if (live.playing) stopLive();
+    stopClipPreview();
+    const n = c.ambience.length + 1;
+    const mk = (id, level) => { const a = new Audio(`/beds/${id}.mp3`); a.loop = true; a.volume = Math.min(1, curve(level) / Math.sqrt(n) * 1.2); a.play().catch(() => {}); return a; };
+    comboAudio = [...c.ambience.map((id) => mk(id, c.bgLevel)), mk(c.music, c.musicLevel)];
+    const first = comboAudio[0];
+    audition = { el: { pause: () => comboAudio.forEach((a) => a.pause()) }, btn };
+    btn.innerHTML = PAUSE;
+    void first;
+  }
 
-  // ---------- sounds (layers) ----------
-  function renderThemes() {
+  // ---------- sound cards ----------
+  function soundCard(t, on, onToggle) {
+    const locked = !t.free && !state.plus;
+    const el = document.createElement('div');
+    el.className = 'theme' + (locked ? ' locked' : '');
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('aria-pressed', String(on));
+    el.style.background = gradient(t.colors);
+    el.innerHTML = `${locked ? '<span class="art-dim"></span>' : ''}${on ? '<span class="layer-no" aria-hidden="true">✓</span>' : ''}
+      <div><h3></h3><p></p></div>
+      <div class="row"><span class="tag">${t.free ? 'Free' : locked ? '🔒 Plus' : 'Plus'}</span>
+      <button class="play" type="button" aria-label="Hear ${t.name} on its own">${PLAY}</button></div>`;
+    el.querySelector('h3').textContent = t.name;
+    el.querySelector('p').textContent = t.blurb;
+    const btn = el.querySelector('.play');
+    btn.addEventListener('click', (e) => { e.stopPropagation(); playAudition(btn, `/beds/${t.id}.mp3`); });
+    const go = () => (locked ? openPlus() : onToggle());
+    el.addEventListener('click', go);
+    el.addEventListener('keydown', (e) => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(); } });
+    return el;
+  }
+  function limitMessage() {
     const max = tier().maxLayers;
-    $('#layerHint').innerHTML = `Layer up to ${max} sounds: some music, background sounds, or both. They drift in one at a time, and you can set how loud each one is. `;
+    return state.plus
+      ? `You can use up to ${max} sounds in total. Tap one to remove it first.`
+      : `The free plan uses ${max} sounds in total (for example one background sound and one piece of music). Unlock Plus for 3.`;
+  }
+  function renderBackground() {
+    const max = tier().maxLayers;
+    const hint = $('#bgHint');
+    hint.innerHTML = 'Tap to add a sound. If your recordings are added, you\'ll hear it with them straight away. ';
     if (!state.plus) {
       const up = document.createElement('button');
-      up.type = 'button'; up.className = 'upsell'; up.textContent = 'Layer 3 sounds with Plus';
+      up.type = 'button'; up.className = 'upsell'; up.textContent = 'Use 3 sounds with Plus';
       up.addEventListener('click', openPlus);
-      $('#layerHint').appendChild(up);
+      hint.appendChild(up);
     }
-    const outer = $('#themes');
-    outer.innerHTML = '';
-    const groups = {};
-    [['music', 'Music', 'Pick one piece of music, or none.'], ['ambience', 'Background sounds', 'Mix these freely, with or without music.']].forEach(([kind, title, sub]) => {
-      const h = document.createElement('div');
-      h.className = 'group-head';
-      h.innerHTML = `<h3></h3><span class="muted small"></span>`;
-      h.querySelector('h3').textContent = title;
-      h.querySelector('span').textContent = sub;
-      const g = document.createElement('div');
-      g.className = 'themes';
-      outer.append(h, g);
-      groups[kind] = g;
-    });
-    config.themes.forEach((t) => {
-      const wrap = groups[t.kind] || groups.ambience;
-      const locked = !t.free && !state.plus;
-      const idx = state.layers.findIndex((l) => l.id === t.id);
-      const on = idx >= 0;
-      const el = document.createElement('div');
-      el.className = 'theme' + (locked ? ' locked' : '');
-      el.setAttribute('role', 'button');
-      el.setAttribute('tabindex', '0');
-      el.setAttribute('aria-pressed', String(on));
-      el.style.background = gradient(t.colors);
-      el.innerHTML = `${locked ? '<span class="art-dim"></span>' : ''}${on ? `<span class="layer-no" aria-label="Layer ${idx + 1}">${idx + 1}</span>` : ''}
-        <div><h3></h3><p></p></div>
-        ${on ? `<label class="vol">Volume <input type="range" min="10" max="100" step="5" value="${Math.round(state.layers[idx].volume * 100)}" aria-label="${t.name} volume"></label>` : ''}
-        <div class="row"><span class="tag">${t.free ? 'Free' : locked ? '🔒 Plus' : 'Plus'}</span>
-        <button class="play" type="button" aria-label="Preview ${t.name}">${PLAY}</button></div>`;
-      el.querySelector('h3').textContent = t.name;
-      el.querySelector('p').textContent = t.blurb;
-      const btn = el.querySelector('.play');
-      btn.addEventListener('click', (e) => { e.stopPropagation(); playPreview(btn, [{ src: `/beds/${t.id}.mp3`, volume: on ? state.layers[idx].volume * state.bedLevel : 1 }]); });
-      const slider = el.querySelector('.vol input');
-      if (slider) {
-        ['click', 'keydown', 'pointerdown'].forEach((ev) => el.querySelector('.vol').addEventListener(ev, (e) => e.stopPropagation()));
-        slider.addEventListener('input', () => {
-          state.layers[idx].volume = slider.value / 100;
-          if (previewOwner === $('#previewMix')) previews.forEach((a, k) => (a.volume = state.layers[k] ? state.layers[k].volume * state.bedLevel : a.volume));
-          renderMixbar();
-        });
-      }
-      const toggle = () => {
-        if (locked) return openPlus();
-        const otherMusic = t.kind === 'music' && !on ? state.layers.findIndex((l) => themeById(l.id).kind === 'music') : -1;
-        if (on) state.layers.splice(idx, 1);
-        else if (otherMusic >= 0) state.layers.splice(otherMusic, 1); // swap music rather than stack it
-        else if (state.layers.length >= max) {
-          if (max === 1) state.layers = [];
-          else return showError(state.plus ? `You can layer up to ${max} sounds. Tap one to remove it first.` : `The free plan layers ${max} sounds. Tap one to remove it, or unlock Plus for 3.`);
-        }
-        if (!on) state.layers.push({ id: t.id, volume: state.layers.length ? 0.6 : 0.85 });
+    const wrap = $('#bgList');
+    wrap.innerHTML = '';
+    config.themes.filter((t) => t.kind !== 'music').forEach((t) => {
+      const on = state.ambience.includes(t.id);
+      wrap.appendChild(soundCard(t, on, () => {
+        if (on) state.ambience = state.ambience.filter((x) => x !== t.id);
+        else if (layerCount() >= max) return showError(limitMessage());
+        else state.ambience.push(t.id);
         showError('');
-        if (previewOwner === $('#previewMix')) stopPreviews();
-        renderThemes();
-      };
-      el.addEventListener('click', toggle);
-      el.addEventListener('keydown', (e) => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(); } });
-      wrap.appendChild(el);
+        renderBackground();
+        mixChanged(true);
+      }));
     });
-    renderMixbar();
+  }
+  function renderMusic() {
+    $('#musicHint').textContent = 'Choose one piece, or none. Tap a different one to swap.';
+    const wrap = $('#musicList');
+    wrap.innerHTML = '';
+    config.themes.filter((t) => t.kind === 'music').forEach((t) => {
+      const on = state.music === t.id;
+      wrap.appendChild(soundCard(t, on, () => {
+        if (on) state.music = null;
+        else if (!state.music && layerCount() >= tier().maxLayers) return showError(limitMessage());
+        else state.music = t.id;
+        showError('');
+        renderMusic();
+        mixChanged(true);
+      }));
+    });
   }
 
-  function renderMixbar() {
-    const bar = $('#mixbar');
-    bar.hidden = state.layers.length < 2;
-    $('#mixSummary').textContent = state.layers.map((l) => `${themeById(l.id).name} ${Math.round(l.volume * 100)}%`).join(' + ');
-  }
-  const mixBtn = $('#previewMix');
-  mixBtn.dataset.label = '▶ Hear them together';
-  mixBtn.addEventListener('click', () => playPreview(mixBtn, state.layers.map((l) => ({ src: `/beds/${l.id}.mp3`, volume: l.volume * state.bedLevel }))));
-
-  // ---------- overall background level ----------
-  function renderBedLevel() {
-    const wrap = $('#bedLevel');
+  // ---------- volume choices ----------
+  function renderLevel(el, key) {
+    const wrap = $(el);
     wrap.innerHTML = '';
     LEVELS.forEach((v) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'len';
       b.setAttribute('role', 'radio');
-      b.setAttribute('aria-checked', String(state.bedLevel === v));
+      b.setAttribute('aria-checked', String(state[key] === v));
       b.innerHTML = `${v * 100}%${v === 0.5 ? '<span class="lock">default</span>' : v === 0.25 ? '<span class="lock">very soft</span>' : ''}`;
       b.addEventListener('click', () => {
-        state.bedLevel = v;
-        previews.forEach((a, k) => { if (previewOwner === mixBtn && state.layers[k]) a.volume = state.layers[k].volume * v; });
-        renderBedLevel();
+        state[key] = v;
+        applyLevels();
+        renderLevel(el, key);
+        mixChanged(true);
       });
       wrap.appendChild(b);
     });
@@ -186,14 +343,13 @@
       const p = b.querySelector('.play');
       if (p) p.addEventListener('click', (e) => {
         e.stopPropagation();
-        const v = 1 + Math.floor(Math.random() * m.variants);
-        playPreview(p, [{ src: `/moments/${m.id}-${v}.mp3` }], { loop: false });
+        playAudition(p, `/moments/${m.id}-${1 + Math.floor(Math.random() * m.variants)}.mp3`, { loop: false });
       });
       wrap.appendChild(b);
     });
   }
 
-  // ---------- lengths ----------
+  // ---------- duration ----------
   function renderLengths() {
     const wrap = $('#lengths');
     wrap.innerHTML = '';
@@ -219,7 +375,7 @@
     const room = state.minutes * 60 - 16 - Math.max(0, state.clips.length - 1) * 4;
     const hint = $('#lengthHint');
     if (state.clips.length > 1 && used > room) {
-      hint.innerHTML = '<span class="warn">Your recordings add up to more than fits in this length, so some may be left out. Choose a longer length or shorten a recording.</span>';
+      hint.innerHTML = '<span class="warn">Your recordings add up to more than fits in this length, so some may be left out. Choose a longer duration or shorten a recording.</span>';
     } else {
       hint.textContent = 'Players can loop it, so even a short soundscape can play all afternoon.';
     }
@@ -259,6 +415,7 @@
         if (c.url) URL.revokeObjectURL(c.url);
         state.clips.splice(i, 1);
         renderClips();
+        renderLivebar();
       });
       if (c.status === 'working') {
         li.insertAdjacentHTML('beforeend', `<span class="busy">${c.isVideo ? 'Taking the sound from your video…' : 'Reading the recording…'}</span>`);
@@ -267,6 +424,7 @@
         meta.className = 'meta';
         meta.textContent = `${c.isVideo ? 'Sound from video · ' : ''}${fmt(c.duration)} long`;
         li.appendChild(meta);
+        let partLabel;
         if (c.duration > 3) {
           const trim = document.createElement('div');
           trim.className = 'trim';
@@ -291,12 +449,13 @@
         const part = document.createElement('div');
         part.className = 'part';
         part.innerHTML = '<button type="button" class="btn ghost">▶ Play this part</button><span class="muted small"></span>';
-        const partLabel = part.querySelector('span');
+        partLabel = part.querySelector('span');
         partLabel.textContent = `Using ${fmt(c.to - c.from)}`;
         const pb = part.querySelector('button');
         pb.addEventListener('click', () => {
           if (clipPreview && clipPreview.btn === pb) return stopClipPreview();
-          stopClipPreview(); stopPreviews();
+          stopClipPreview(); stopAudition();
+          if (live.playing) stopLive();
           const audio = new Audio(c.url);
           clipPreview = { audio, btn: pb };
           pb.textContent = '■ Stop';
@@ -312,14 +471,14 @@
     renderLengthHint();
   }
 
-  // Decode in the browser where we can: works for most phone videos, so we
-  // only upload the few seconds of sound that are needed, not the whole video.
-  let audioCtx;
+  // Decode in the browser where we can: it lets us play the recording in the
+  // live mix, and for videos we only upload the few seconds of sound needed.
+  let decodeCtx;
   async function decodeToMono(file) {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    decodeCtx = decodeCtx || new (window.AudioContext || window.webkitAudioContext)();
     const buf = await file.arrayBuffer();
     const decoded = await new Promise((res, rej) => {
-      const p = audioCtx.decodeAudioData(buf, res, rej);
+      const p = decodeCtx.decodeAudioData(buf, res, rej);
       if (p && p.then) p.then(res, rej);
     });
     const rate = 22050;
@@ -330,7 +489,7 @@
     src.connect(off.destination);
     src.start();
     const rendered = await off.startRendering();
-    return { pcm: rendered.getChannelData(0), rate };
+    return { pcm: rendered.getChannelData(0), rate, buffer: rendered };
   }
   function wavBlob(pcm, rate, from = 0, to = pcm.length / rate) {
     const a = Math.floor(from * rate);
@@ -354,21 +513,22 @@
       a.src = url;
     });
   }
+  // even out quiet and loud recordings in the live mix, like the final mix does
+  function loudnessGain(pcm) {
+    let sum = 0, n = 0;
+    for (let i = 0; i < pcm.length; i += 7) { const v = pcm[i]; if (Math.abs(v) > 0.01) { sum += v * v; n++; } }
+    const rms = Math.sqrt(sum / Math.max(1, n)) || 0.1;
+    return Math.max(0.3, Math.min(6, 0.12 / rms));
+  }
 
   async function prepareClip(c) {
-    const big = c.file.size > 20 * 1024 * 1024;
     try {
-      if (c.isVideo || big) {
-        if (c.file.size > 600 * 1024 * 1024) throw new Error('too big');
-        const { pcm, rate } = await decodeToMono(c.file);
-        c.pcm = pcm; c.rate = rate;
-        c.duration = pcm.length / rate;
-        c.url = URL.createObjectURL(wavBlob(pcm, rate, 0, Math.min(c.duration, 600)));
-      } else {
-        c.url = URL.createObjectURL(c.file);
-        c.duration = await mediaDuration(c.url);
-        if (!c.duration) throw new Error('no duration');
-      }
+      if (c.file.size > 600 * 1024 * 1024) throw new Error('too big');
+      const { pcm, rate, buffer } = await decodeToMono(c.file);
+      c.pcm = pcm; c.rate = rate; c.buffer = buffer;
+      c.duration = pcm.length / rate;
+      c.previewGain = loudnessGain(pcm);
+      c.url = URL.createObjectURL(wavBlob(pcm, rate, 0, Math.min(c.duration, 600)));
     } catch {
       // Fall back to uploading the original file; the server pulls out the sound.
       if (c.file.size > 250 * 1024 * 1024) {
@@ -378,12 +538,13 @@
       }
       if (!c.url) c.url = URL.createObjectURL(c.file);
       c.duration = c.duration || (await mediaDuration(c.url)) || 30;
-      c.note = 'We\'ll take the sound out of this one after you press Create.';
+      c.note = 'This one won\'t play in the live mix, but it will be in your soundscape.';
     }
     c.from = 0;
     c.to = Math.min(c.duration, config.maxClipSeconds);
     c.status = 'ready';
     renderClips();
+    renderLivebar();
   }
 
   function addFiles(files) {
@@ -391,7 +552,7 @@
     let skipped = 0;
     for (const f of files) {
       if (state.clips.length >= max) { skipped++; continue; }
-      const isVideo = f.type.startsWith('video/') || /\.(mp4|mov|m4v|3gp|webm)$/i.test(f.name) && !f.type.startsWith('audio/');
+      const isVideo = f.type.startsWith('video/') || (/\.(mp4|mov|m4v|3gp|webm)$/i.test(f.name) && !f.type.startsWith('audio/'));
       const c = { file: f, name: f.name.replace(/\.[a-z0-9]{2,4}$/i, ''), isVideo, status: 'working' };
       state.clips.push(c);
       prepareClip(c);
@@ -415,6 +576,7 @@
     if (recorder) { recorder.stop(); return; }
     if (!navigator.mediaDevices || !window.MediaRecorder) { status.textContent = 'Recording isn\'t supported in this browser. Upload a file instead.'; return; }
     try {
+      if (live.playing) stopLive();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true } });
       const chunks = [];
       recorder = new MediaRecorder(stream);
@@ -458,12 +620,27 @@
     pill.classList.toggle('on', on);
     pill.innerHTML = on ? 'Plus (demo) · <u>switch to free</u>' : 'Free plan · <u>Unlock Plus</u>';
     // keep choices valid for the tier
-    if (!on) state.layers = state.layers.filter((l) => themeById(l.id).free);
-    state.layers = state.layers.slice(0, tier().maxLayers);
-    if (!state.layers.length) state.layers = [{ id: config.themes.find((t) => t.free && t.kind === 'ambience').id, volume: 0.85 }];
+    if (!on) {
+      state.ambience = state.ambience.filter((id) => themeById(id).free);
+      if (state.music && !themeById(state.music).free) state.music = null;
+    }
+    while (layerCount() > tier().maxLayers) state.ambience.pop();
     if (state.minutes > tier().maxMinutes) state.minutes = tier().maxMinutes;
     while (state.clips.length > tier().maxClips) { const c = state.clips.pop(); if (c.url) URL.revokeObjectURL(c.url); }
-    renderThemes(); renderLengths(); renderClips();
+    renderAll();
+    syncBedsIfReady();
+  }
+
+  function renderAll() {
+    renderCombos();
+    renderClips();
+    renderBackground();
+    renderMoments();
+    renderLevel('#bgLevel', 'bgLevel');
+    renderMusic();
+    renderLevel('#musicLevel', 'musicLevel');
+    renderLengths();
+    renderLivebar();
   }
 
   // ---------- submit ----------
@@ -472,14 +649,18 @@
   $('#create').addEventListener('submit', async (e) => {
     e.preventDefault();
     showError('');
-    if (!state.layers.length) return showError('Pick at least one sound.');
-    if (!state.clips.length) return showError('Add at least one recording.');
+    if (!state.clips.length) return showError('Add at least one recording (step 1).');
+    if (!layerCount()) return showError('Add at least one background sound or piece of music.');
     if (state.clips.some((c) => c.status !== 'ready')) return showError('Hang on, still reading a recording…');
     if (!$('#consent').checked) return showError('Please tick the permission box.');
 
+    const layers = [
+      ...state.ambience.map((id) => ({ id, volume: curve(state.bgLevel) })),
+      ...(state.music ? [{ id: state.music, volume: curve(state.musicLevel) }] : []),
+    ];
     const fd = new FormData();
-    fd.append('layers', JSON.stringify(state.layers));
-    fd.append('bedLevel', String(state.bedLevel));
+    fd.append('layers', JSON.stringify(layers));
+    fd.append('bedLevel', '1'); // volumes are already in each layer
     fd.append('moments', state.moments);
     fd.append('minutes', String(state.minutes));
     fd.append('title', $('#title').value.trim());
@@ -498,7 +679,7 @@
     });
     fd.append('clipInfo', JSON.stringify(info));
 
-    stopPreviews(); stopClipPreview();
+    stopLive(); stopAudition(); stopClipPreview();
     $('#working').hidden = false;
     $('#submitBtn').disabled = true;
     try {
@@ -530,21 +711,7 @@
       r.querySelector('.tl-label').title = label;
       fill(r.querySelector('.tl-track'));
       box.appendChild(r);
-      return r;
     };
-    (d.layers || []).forEach((l, k) => {
-      const t = themeById(l.id);
-      const info = tl.layers[k] || { fadeStart: 0, fadeLen: 4 };
-      row(t.name, (track) => {
-        const b = document.createElement('div');
-        b.className = 'tl-block';
-        b.style.left = pct(info.fadeStart);
-        b.style.right = '0';
-        b.style.background = `linear-gradient(90deg, transparent, ${t.colors[0]} ${(info.fadeLen / (tl.total - info.fadeStart)) * 100}%, ${t.colors[0]} 96%, transparent)`;
-        b.style.opacity = String(0.35 + 0.65 * l.volume);
-        track.appendChild(b);
-      });
-    });
     const names = [...new Set(tl.voices.map((v) => v.clip))].sort((a, b) => a - b);
     names.forEach((ci) => {
       const voices = tl.voices.filter((v) => v.clip === ci);
@@ -557,6 +724,19 @@
         b.title = `${v.name} at ${fmt(v.start)}`;
         track.appendChild(b);
       }));
+    });
+    (d.layers || []).forEach((l, k) => {
+      const t = themeById(l.id);
+      const info = tl.layers[k] || { fadeStart: 0, fadeLen: 4 };
+      row(t.name, (track) => {
+        const b = document.createElement('div');
+        b.className = 'tl-block';
+        b.style.left = pct(info.fadeStart);
+        b.style.right = '0';
+        b.style.background = `linear-gradient(90deg, transparent, ${t.colors[0]} ${(info.fadeLen / (tl.total - info.fadeStart)) * 100}%, ${t.colors[0]} 96%, transparent)`;
+        b.style.opacity = String(0.35 + 0.65 * Math.min(1, l.volume));
+        track.appendChild(b);
+      });
     });
     if (tl.moments.length) {
       const m = config.moments.find((x) => x.id === d.moments);
@@ -576,7 +756,6 @@
     box.appendChild(axis);
     if (tl.unused > 0) box.insertAdjacentHTML('beforeend', `<p class="warn small" style="margin:4px 0 0">${tl.unused} recording${tl.unused > 1 ? 's' : ''} didn't fit in this length. Make a longer one to include ${tl.unused > 1 ? 'them' : 'it'}.</p>`);
 
-    // playhead that follows the audio
     const tracks = [...box.querySelectorAll('.tl-track')];
     const heads = tracks.map((t) => { const h = document.createElement('div'); h.className = 'tl-head'; h.style.left = '0'; t.appendChild(h); return h; });
     const audio = $('#resultAudio');
@@ -585,7 +764,9 @@
 
   function showResult(d) {
     $('#create').hidden = true;
+    $('#combos').hidden = true;
     $('#result').hidden = false;
+    renderLivebar();
     const theme = themeById(d.theme);
     $('#resultCard').style.borderTop = `8px solid ${theme.colors[0]}`;
     $('#resultTitle').textContent = d.title;
@@ -610,10 +791,12 @@
     $('#resultAudio').pause();
     $('#result').hidden = true;
     $('#create').hidden = false;
+    $('#combos').hidden = false;
     state.clips.forEach((c) => c.url && URL.revokeObjectURL(c.url));
     state.clips = [];
     $('#title').value = '';
     renderClips();
+    renderLivebar();
     $('#create').scrollIntoView({ behavior: 'smooth' });
   });
 
@@ -621,8 +804,5 @@
   fetch('/api/config').then((r) => r.json()).then((c) => {
     config = c;
     setPlus(state.plus);
-    renderBedLevel();
-    renderMoments();
-    renderExamples();
   });
 })();
