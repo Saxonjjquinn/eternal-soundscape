@@ -253,6 +253,39 @@ function finishMusic(track, swellPeriod, lp = 5000) {
 const human = (R, amt = 0.012) => (R() - 0.5) * amt;
 function chordAt(prog, bar) { return prog[bar % prog.length]; }
 
+
+// The same soft, slow house feel as Lo-fi Jazz House, with a different key,
+// tempo and colour: a held chord every two bars, the odd answer note, a round
+// bass note per bar, a pulse you feel more than hear, a warm pad underneath.
+function slowHouse(R, { bpm, prog, keys = 'epiano', answer = 'epiano', rim: useRim = false, keysLp = 4200, swell = 6.4, bars = 32 }) {
+  const beat = 60 / bpm, bar = beat * 4;
+  const T = new Track(bar * bars);
+  const K = new Track(bar * bars);
+  const chords = prog.flatMap((c) => [c, c]); // each chord lasts two bars
+  const voice = (m, d, v) => (keys === 'piano' ? piano(m, d, v) : epiano(m, d, v));
+  for (let k = 0; k < bars; k++) {
+    const c = chordAt(chords, k);
+    const t0 = k * bar;
+    const quiet = k >= 24 && k < 28;
+    if (k % 2 === 0) c.v.forEach((m, i) => K.put(voice(m, bar * 1.6, 0.4), t0 + human(R) + i * (keys === 'piano' ? 0.05 : 0.012), keys === 'piano' ? 0.34 : 0.26, 0.35 + i * 0.1));
+    else if (R() < 0.5) {
+      const top = c.v[3] + 12;
+      const note = answer === 'bell' ? bell(top, 0.5) : answer === 'string' ? string(top - 12, 0.8, 0.5, R, 0.25) : epiano(top, beat, 0.25);
+      K.put(note, t0 + (R() < 0.5 ? 2.5 : 1.5) * beat, answer === 'bell' ? 0.05 : answer === 'string' ? 0.12 : 0.07, 0.3 + R() * 0.4);
+    }
+    T.put(bass(c.b, bar * 0.8, 0.7), t0 + human(R, 0.006), 0.2, 0.5);
+    if (!quiet) {
+      for (let b = 0; b < 4; b++) T.put(kick(R, 0.6), t0 + b * beat, 0.08, 0.5);
+      if (useRim && k % 2 === 1) T.put(rim(R, 0.5), t0 + 2 * beat + human(R, 0.01), 0.025, 0.6);
+    }
+  }
+  lowpassTrack(K, keysLp);
+  T.mix(reverb(K, 0.35));
+  padBed(T, Array.from({ length: bars }, (_, k) => chordAt(chords, k).v), bar, 0.035);
+  vinyl(T, R, 0.3, 0.002);
+  return finishMusic(reverb(T, 0.18), swell);
+}
+
 // ---------- the pieces ----------
 const pieces = {
   // 120 BPM, 32 bars = 64 s. Fmaj9 | Em9 | Dm9 | Cmaj9, two bars each.
@@ -283,6 +316,28 @@ const pieces = {
     padBed(T, Array.from({ length: bars }, (_, k) => chordAt(prog, k).v), bar, 0.035);
     vinyl(T, R, 0.3, 0.002);
     return finishMusic(reverb(T, 0.18), 6.4);
+  },
+
+  // Siblings of Lo-fi Jazz House (Saxon loves its soft slowness).
+  // 112 BPM in C: Dm9 | G13 | Cmaj9 | Am9, with a soft vibes answer.
+  'sunset-house'(R) {
+    return slowHouse(R, { bpm: 112, answer: 'bell', swell: 6.8, prog: [
+      { b: 38, v: [53, 57, 60, 64] }, { b: 43, v: [53, 57, 59, 64] }, { b: 36, v: [52, 55, 59, 62] }, { b: 45, v: [55, 59, 60, 64] }] });
+  },
+  // 108 BPM in A minor: Am9 | Fmaj9 | Cmaj9 | G6/9, with a faint rim now and then.
+  'midnight-house'(R) {
+    return slowHouse(R, { bpm: 108, rim: true, keysLp: 3600, swell: 7.2, prog: [
+      { b: 45, v: [55, 59, 60, 64] }, { b: 41, v: [57, 60, 64, 67] }, { b: 36, v: [52, 55, 59, 62] }, { b: 43, v: [57, 59, 62, 64] }] });
+  },
+  // 104 BPM in F: Bbmaj9 | Am7 | Gm9 | C9sus, on soft felt piano.
+  'window-seat'(R) {
+    return slowHouse(R, { bpm: 104, keys: 'piano', keysLp: 2600, swell: 6, prog: [
+      { b: 46, v: [57, 60, 62, 65] }, { b: 45, v: [55, 60, 64, 67] }, { b: 43, v: [53, 57, 58, 62] }, { b: 36, v: [55, 58, 62, 65] }] });
+  },
+  // 114 BPM in Eb: Ebmaj9 | Cm9 | Fm9 | Bb13, with a little plucked guitar answer.
+  'golden-hour'(R) {
+    return slowHouse(R, { bpm: 114, answer: 'string', swell: 6.6, prog: [
+      { b: 39, v: [55, 58, 62, 65] }, { b: 36, v: [51, 55, 58, 62] }, { b: 41, v: [56, 60, 63, 67] }, { b: 46, v: [56, 60, 62, 67] }] });
   },
 
   // 60 BPM, 16 bars = 64 s. Quiet piano: a slow broken chord and one or two melody notes a bar.

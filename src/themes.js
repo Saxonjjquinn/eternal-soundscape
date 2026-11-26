@@ -5,8 +5,12 @@ const THEMES = [
   // ---- music (only one piece at a time, so keys and tempos never clash) ----
   { id: 'classical-piano', kind: 'music', gen: 'music', name: 'Classical Piano', blurb: 'Slow, rolling piano with a simple melody.', free: true, colors: ['#5d5a7a', '#d9d2e9'] },
   { id: 'lofi-jazz-house', kind: 'music', gen: 'music', name: 'Lo-fi Jazz House', blurb: 'Warm keys over a soft, steady four-on-the-floor.', free: true, colors: ['#3e6e75', '#e3c9a1'] },
+  { id: 'sunset-house', kind: 'music', gen: 'music', name: 'Sunset House', blurb: 'Slow, warm keys with a soft vibraphone answer.', free: true, colors: ['#b5654f', '#f3c9a0'] },
   { id: 'lullaby-glow', kind: 'music', name: 'Lullaby Glow', blurb: 'A soft pad with music-box notes, like a nightlight.', free: true, colors: ['#8a6fa8', '#e8c9e0'] },
   { id: 'music-box', kind: 'music', name: 'Music Box', blurb: 'A few slow, twinkling notes and nothing else.', free: true, colors: ['#b0697f', '#f4cdd4'] },
+  { id: 'midnight-house', kind: 'music', gen: 'music', name: 'Midnight House', blurb: 'Dark, slow chords and a gentle pulse.', free: false, colors: ['#2b2f55', '#8f86c4'] },
+  { id: 'window-seat', kind: 'music', gen: 'music', name: 'Window Seat', blurb: 'Soft felt piano over a slow, steady pulse.', free: false, colors: ['#556b7d', '#d6dfe6'] },
+  { id: 'golden-hour', kind: 'music', gen: 'music', name: 'Golden Hour', blurb: 'Warm keys with a little plucked guitar.', free: false, colors: ['#a7743a', '#f2d49b'] },
   { id: 'lofi-electronic', kind: 'music', gen: 'music', name: 'Lo-fi Electronic', blurb: 'Hazy chords, a gentle arpeggio and a lazy beat.', free: false, colors: ['#4a4f8c', '#e7a7c8'] },
   { id: 'late-night-jazz', kind: 'music', gen: 'music', name: 'Late-Night Jazz', blurb: 'Brushes, walking bass and soft electric piano.', free: false, colors: ['#2e3b4e', '#d8b26e'] },
   { id: 'slow-blues', kind: 'music', gen: 'music', name: 'Slow Blues', blurb: 'An easy shuffle with a little guitar.', free: false, colors: ['#2c4a7a', '#9cc0e8'] },
@@ -35,6 +39,7 @@ const MOMENTS = [
 // Ready-made combinations shown at the top of the page. Levels are 0.25–1.
 const COMBOS = [
   { id: 'rainy-afternoon', name: 'Rainy Afternoon', blurb: 'Soft rain with warm lo-fi keys.', ambience: ['gentle-rain'], music: 'lofi-jazz-house', bgLevel: 0.5, musicLevel: 0.5 },
+  { id: 'golden-afternoon', name: 'Golden Afternoon', blurb: 'Birds outside and slow, warm house keys.', ambience: ['distant-birds'], music: 'sunset-house', bgLevel: 0.5, musicLevel: 0.5 },
   { id: 'sunday-morning', name: 'Sunday Morning', blurb: 'Birds outside and a slow piano.', ambience: ['distant-birds'], music: 'classical-piano', bgLevel: 0.5, musicLevel: 0.5 },
   { id: 'sleepy-time', name: 'Sleepy Time', blurb: 'A gentle fan and a lullaby glow.', ambience: ['fan-hum'], music: 'lullaby-glow', bgLevel: 0.5, musicLevel: 0.25 },
   { id: 'by-the-sea', name: 'By the Sea', blurb: 'Waves rolling in, a few music-box notes.', ambience: ['ocean-waves'], music: 'music-box', bgLevel: 0.5, musicLevel: 0.5 },
