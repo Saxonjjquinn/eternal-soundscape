@@ -89,7 +89,8 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
     if (locked) throw new Error(`${locked.theme.name} is a Plus sound.`);
     const voiceLevel = [0.25, 0.5, 0.75, 1].includes(Number(req.body.voiceLevel)) ? Number(req.body.voiceLevel) : 1;
     const bedLevel = [0.25, 0.5, 0.75, 1].includes(Number(req.body.bedLevel)) ? Number(req.body.bedLevel) : 0.5;
-    const moment = MOMENTS.find((m) => m.id === (req.body.moments || 'none')) || MOMENTS[0];
+    // little moments: any number of kinds, comma separated ("none" or empty for none)
+    const momentSets = [...new Set(String(req.body.moments || '').split(','))].map((id) => MOMENTS.find((m) => m.id === id.trim())).filter((m) => m && m.variants);
 
     if (!files.length) throw new Error('Please add at least one voice clip.');
     if (files.length > tier.maxClips) throw new Error(`You can add up to ${tier.maxClips} clips${tierName === 'free' ? ' on the free plan' : ''}.`);
@@ -112,7 +113,7 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
           from: clipInfo[i] && clipInfo[i].from,
           to: clipInfo[i] && clipInfo[i].to,
         })),
-        moments: moment.variants ? { dir: path.join(PUBLIC, 'moments'), id: moment.id, variants: moment.variants } : null,
+        moments: momentSets.length ? { dir: path.join(PUBLIC, 'moments'), sets: momentSets.map((m) => ({ id: m.id, variants: m.variants })) } : null,
         seconds: Math.round(minutes * 60),
         output: path.join(dir, 'soundscape.mp3'),
         workDir,
@@ -129,7 +130,7 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
     }
     timeline.unused = files.length - new Set(timeline.voices.map((v) => v.clip)).size;
     const meta = {
-      id, title, theme: layers[0].theme.id, layers: layers.map((l) => ({ id: l.theme.id, volume: l.volume })), bedLevel, moments: moment.id,
+      id, title, theme: layers[0].theme.id, layers: layers.map((l) => ({ id: l.theme.id, volume: l.volume })), bedLevel, moments: momentSets.map((m) => m.id),
       minutes, clips: files.length, tier: tierName, preview: req.body.preview === '1', createdAt: new Date().toISOString(), mixMs: Date.now() - started, timeline,
     };
     fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));

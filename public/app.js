@@ -9,7 +9,7 @@
   const curve = (level) => Math.pow(level, 1.25); // so each volume step is clearly audible
 
   let config;
-  const state = { ambience: [], music: null, bgLevel: 0.5, musicLevel: 0.5, voiceLevel: 1, moments: 'none', minutes: 2, clips: [], plus: false };
+  const state = { ambience: [], music: null, bgLevel: 0.5, musicLevel: 0.5, voiceLevel: 1, moments: [], minutes: 2, clips: [], plus: false };
   try { state.plus = localStorage.getItem('le-plus') === '1'; } catch {}
   const tier = () => config.tiers[state.plus ? 'plus' : 'free'];
   const themeById = (id) => config.themes.find((t) => t.id === id);
@@ -219,13 +219,19 @@
     config.moments.forEach((m) => {
       const b = document.createElement('div');
       b.className = 'len moment-opt';
-      b.setAttribute('role', 'radio');
+      b.setAttribute('role', 'checkbox');
       b.setAttribute('tabindex', '0');
-      b.setAttribute('aria-checked', String(state.moments === m.id));
+      const on = m.id === 'none' ? !state.moments.length : state.moments.includes(m.id);
+      b.setAttribute('aria-checked', String(on));
       b.innerHTML = `<span></span>${m.variants ? `<button type="button" class="play" aria-label="Hear ${m.name}">${PLAY}</button>` : ''}`;
       b.querySelector('span').textContent = m.name;
       if (!m.variants) b.style.paddingRight = '16px';
-      const choose = () => { state.moments = m.id; renderMoments(); };
+      // pick as many as you like; "None" clears them
+      const choose = () => {
+        if (m.id === 'none') state.moments = [];
+        else state.moments = on ? state.moments.filter((x) => x !== m.id) : [...state.moments, m.id];
+        renderMoments();
+      };
       b.addEventListener('click', choose);
       b.addEventListener('keydown', (e) => { if (e.target === b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); choose(); } });
       const p = b.querySelector('.play');
@@ -524,7 +530,7 @@
     fd.append('layers', JSON.stringify(layers));
     fd.append('bedLevel', '1'); // volumes are already in each layer
     fd.append('voiceLevel', String(state.voiceLevel));
-    fd.append('moments', state.moments);
+    fd.append('moments', state.moments.join(','));
     fd.append('minutes', String(state.minutes));
     fd.append('title', $('#title').value.trim());
     fd.append('consent', '1');
@@ -658,8 +664,9 @@
       });
     });
     if (tl.moments.length) {
-      const m = config.moments.find((x) => x.id === d.moments);
-      row(m ? m.name : 'Moments', (track) => tl.moments.forEach((mo) => {
+      const ids = Array.isArray(d.moments) ? d.moments : [d.moments];
+      const label = ids.map((id) => (config.moments.find((x) => x.id === id) || {}).name).filter(Boolean).join(', ');
+      row(label || 'Moments', (track) => tl.moments.forEach((mo) => {
         const dot = document.createElement('div');
         dot.className = 'tl-dot';
         dot.style.left = pct(mo.start);

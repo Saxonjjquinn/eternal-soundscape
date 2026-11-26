@@ -166,7 +166,9 @@ function schedule(durations, total, { seed = 1, momentVariants = 0, momentDur = 
   while (seq.length > 1 && !fits(seq)) seq.pop(); // drop repeats first, then whatever won't fit
   // Never leave a long stretch of music alone: if there's still plenty of room,
   // bring recordings back as soft echoes (even in short soundscapes).
-  while (seq.length < maxCount && room - used(seq) >= durations[pool[seq.length]] + 4 + minGap) seq.push(pool[seq.length]);
+  // (If little moments were chosen, keep a few quiet stretches free for them.)
+  const reserve = momentVariants > 0 ? Math.min(4, Math.max(1, Math.round(total / 40))) * (momentDur + 6) : 0;
+  while (seq.length < maxCount && room - used(seq) - reserve >= durations[pool[seq.length]] + 4 + minGap) seq.push(pool[seq.length]);
 
   const voices = [];
   const gaps = [];
@@ -240,7 +242,7 @@ async function renderTrack(items, total, output, extra = () => '') {
  * @param {object} o
  * @param {{file:string, volume:number, music?:boolean}[]} o.layers  ambient beds (1–3), volume 0..1
  * @param {{file:string, from?:number, to?:number, name?:string}[]} o.clips
- * @param {{dir:string, id:string, variants:number}|null} o.moments
+ * @param {{dir:string, sets:{id:string, variants:number}[]}|null} o.moments
  * @param {number} o.seconds
  * @param {string} o.output
  * @param {string} o.workDir
@@ -265,14 +267,25 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
   const n = clips.length;
   const room = seconds - 16 - 6 * (n - 1);
   for (let i = 0; i < n; i++) {
-    const target = seconds <= 120 ? room / n : durations[i] * 1.4;
+    // leave some quiet stretches for little moments if any were chosen
+    const target = (seconds <= 120 ? room / n : durations[i] * 1.4) * (moments && moments.sets && moments.sets.length ? 0.75 : 1);
     const spaced = await spaceClip(prepared[i], path.join(workDir, `clip${i}-spaced.wav`), target);
     prepared[i] = spaced.file;
     durations[i] = spaced.dur;
   }
 
-  const momentDur = moments && moments.id === 'bowl' ? 9 : 6;
-  const plan = schedule(durations, seconds, { seed, momentVariants: moments ? moments.variants : 0, momentDur });
+  // moments: { dir, sets: [{ id, variants }] } - any number of kinds, mixed at random
+  const sets = (moments && moments.sets) || [];
+  const momentDur = sets.some((m) => m.id === 'bowl') ? 9 : 6;
+  const plan = schedule(durations, seconds, { seed, momentVariants: sets.length ? 4 : 0, momentDur });
+  // take turns between the chosen kinds (in a shuffled order) so each one is heard
+  const mr = seeded(seed * 13 + 5);
+  const turn = [...sets].sort(() => mr() - 0.5);
+  plan.moments.forEach((m, k) => {
+    const set = turn[k % turn.length];
+    m.kind = set.id;
+    m.file = path.join(moments.dir, `${set.id}-${1 + Math.floor(mr() * set.variants)}.mp3`);
+  });
 
   // Pass 2a: voice track and moments track.
   const voicesWav = path.join(workDir, 'voices.wav');
@@ -287,7 +300,7 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
   if (plan.moments.length) {
     momentsWav = path.join(workDir, 'moments.wav');
     await renderTrack(
-      plan.moments.map((m) => ({ ...m, gain: +(0.8 * Math.sqrt(level)).toFixed(3), file: path.join(moments.dir, `${moments.id}-${m.variant}.mp3`) })),
+      plan.moments.map((m) => ({ ...m, gain: +(0.8 * Math.sqrt(level)).toFixed(3) })),
       seconds,
       momentsWav
     );
@@ -350,7 +363,7 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
     total: seconds,
     layers: layerInfo,
     voices: plan.voices.map((v) => ({ clip: v.clip, name: clips[v.clip].name || `Clip ${v.clip + 1}`, start: +v.start.toFixed(2), dur: +v.dur.toFixed(2), pan: v.pan, echo: !!v.echo })),
-    moments: plan.moments.map((m) => ({ start: m.start, dur: m.dur })),
+    moments: plan.moments.map((m) => ({ start: m.start, dur: m.dur, kind: m.kind })),
   };
 }
 

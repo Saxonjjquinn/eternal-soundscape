@@ -322,6 +322,58 @@ function momentBuffers(id, variant) {
       tone(t, PENTA[idx] * 2, 0.22, 0.9, 0.5, [[1, 1, 1], [2, 0.25, 0.4], [3, 0.08, 0.3]]);
       t += 0.38 + R() * 0.2;
     }
+  } else if (id === 'whistle') {
+    // a short, relaxed whistled tune: a pure tone gliding between notes, a little vibrato and breath
+    const tunes = [[4, 5, 4, 2, 3], [2, 4, 5, 7, 5], [5, 4, 2, 0, 2, 4], [3, 5, 7, 5]];
+    const notes = tunes[(variant - 1) % tunes.length];
+    const hz = (i) => PENTA[Math.min(PENTA.length - 1, i % PENTA.length)] * (i >= PENTA.length ? 2 : 1) * 4;
+    let ph = 0, prevF = hz(notes[0]);
+    const lens = notes.map((_, k) => (k === notes.length - 1 ? 0.9 : 0.32 + R() * 0.25));
+    const total = lens.reduce((a, b) => a + b, 0);
+    let t0 = 0.1, k = 0, noiseLp = 0;
+    for (let j = Math.floor(t0 * SR); j < n && k < notes.length; j++) {
+      const t = j / SR;
+      if (t > t0 + lens[k]) { t0 += lens[k]; k++; if (k >= notes.length) break; }
+      const target = hz(notes[k]);
+      prevF += (target - prevF) * 0.0025; // portamento
+      const local = t - t0;
+      const vib = 1 + 0.008 * Math.sin(2 * Math.PI * 5.4 * t) * Math.min(1, local / 0.2);
+      ph += (2 * Math.PI * prevF * vib) / SR;
+      const all = t - 0.1;
+      const env = Math.min(1, all / 0.08) * Math.min(1, (total - all) / 0.3) * (0.8 + 0.2 * Math.min(1, local / 0.05));
+      noiseLp += 0.3 * ((R() * 2 - 1) - noiseLp);
+      const v = (Math.sin(ph) + noiseLp * 0.05) * Math.max(0, env) * 0.16;
+      L[j] += v * 0.55; Rr[j] += v * 0.45;
+    }
+  } else if (id === 'footsteps') {
+    // small feet pattering past: soft thumps and a little scuff, drifting across the room
+    const steps = 5 + Math.floor(R() * 5);
+    let t = 0.1;
+    const fromLeft = variant % 2 === 1;
+    for (let k = 0; k < steps; k++) {
+      const pan = fromLeft ? 0.25 + (0.5 * k) / steps : 0.75 - (0.5 * k) / steps;
+      const loud = 0.6 + 0.4 * Math.sin((Math.PI * (k + 0.5)) / steps); // nearest in the middle
+      const f = 70 + R() * 40;
+      let lp = 0;
+      for (let j = Math.floor(t * SR), end = Math.min(n, j + SR * 0.18); j < end; j++) {
+        const u = j / SR - t;
+        lp += 0.12 * ((R() * 2 - 1) - lp);
+        const v = (Math.sin(2 * Math.PI * f * u) * Math.exp(-u * 40) + lp * 0.9 * Math.exp(-u * 28)) * Math.min(1, u / 0.002) * 0.35 * loud;
+        L[j] += v * (1 - pan); Rr[j] += v * pan;
+      }
+      t += (k % 2 ? 0.26 : 0.31) + R() * 0.08;
+    }
+  } else if (id === 'bikebell') {
+    // a bicycle bell out on the street: two quick rattly rings
+    const f = [2050, 2350, 2600][(variant - 1) % 3];
+    const partials = [[1, 1, 1], [1.51, 0.5, 0.7], [2.02, 0.3, 0.5], [2.74, 0.25, 0.35], [3.9, 0.1, 0.2]];
+    const rings = 1 + (variant % 2) + (R() < 0.3 ? 1 : 0);
+    let t = 0.1;
+    for (let r = 0; r < rings; r++) {
+      const strikes = 4 + Math.floor(R() * 3); // the clapper rattles
+      for (let s = 0; s < strikes; s++) tone(t + s * 0.045, f * (1 + (R() - 0.5) * 0.004), 0.06 * (s === 0 ? 1 : 0.55), 0.9, 0.62, partials);
+      t += 0.55 + R() * 0.2;
+    }
   } else if (id === 'bowl') {
     const f = [174.6, 196, 220.0][variant % 3];
     tone(0.05, f, 0.35, 3.2, 0.5, [[1, 1, 1], [2.71, 0.45, 0.6], [5.1, 0.18, 0.35], [1.006, 0.6, 1]]);
@@ -337,7 +389,7 @@ MOMENTS.filter((m) => m.variants).forEach((m) => {
     const wav = path.join(tmp, `${m.id}-${v}.wav`);
     writeWav(wav, L, R);
     const out = path.join(momentsDir, `${m.id}-${v}.mp3`);
-    execFileSync(ffmpeg, ['-y', '-loglevel', 'error', '-i', wav, '-af', 'aecho=0.8:0.6:70|140:0.25|0.15,loudnorm=I=-24:TP=-3', '-ar', '44100', '-b:a', '160k', out]);
+    execFileSync(ffmpeg, ['-y', '-loglevel', 'error', '-i', wav, '-af', `aecho=0.8:0.6:70|140:0.25|0.15,${m.id === 'bikebell' ? 'lowpass=f=6000,' : ''}loudnorm=I=${{ bikebell: -28, footsteps: -27, whistle: -26 }[m.id] || -24}:TP=-3`, '-ar', '44100', '-b:a', '160k', out]);
   }
   console.log('wrote moments', m.id);
 });

@@ -32,6 +32,9 @@ const THEMES = [
 const MOMENTS = [
   { id: 'none', name: 'None', variants: 0 },
   { id: 'chimes', name: 'Wind chimes', variants: 4 },
+  { id: 'whistle', name: 'Whistling', variants: 4 },
+  { id: 'footsteps', name: 'Footsteps', variants: 4 },
+  { id: 'bikebell', name: 'Bike bell', variants: 3 },
   { id: 'musicbox', name: 'Music-box phrase', variants: 4 },
   { id: 'bowl', name: 'Singing bowl', variants: 3 },
 ];
