@@ -241,6 +241,7 @@ function chordAt(prog, bar) { return prog[bar % prog.length]; }
 // ---------- the pieces ----------
 const pieces = {
   // 120 BPM, 32 bars = 64 s. Fmaj9 | Em9 | Dm9 | Cmaj9, two bars each.
+  // Minimal: one held chord, one bass note per bar, a faint pulse.
   'lofi-jazz-house'(R) {
     const beat = 0.5, bar = beat * 4, bars = 32;
     const T = new Track(bar * bars);
@@ -254,66 +255,54 @@ const pieces = {
     for (let k = 0; k < bars; k++) {
       const c = chordAt(prog, k);
       const t0 = k * bar;
-      const breakdown = k >= 24 && k < 28; // drums drop out briefly for variety
-      // chord stabs, soft and syncopated
-      const hits = k % 2 === 0 ? [[0, 1.4, 0.55], [2.5, 0.4, 0.35]] : [[1.5, 0.9, 0.42], [3.5, 0.35, 0.3]];
-      hits.forEach(([b, d, v]) => c.v.forEach((m, i) => keys.put(epiano(m, d * beat, v * (0.9 + R() * 0.2)), t0 + b * beat + human(R) + i * 0.006, 0.16, 0.35 + i * 0.1)));
-      // bass
-      T.put(bass(c.b, 0.85 * beat, 0.9), t0 + human(R, 0.006), 0.42, 0.5);
-      T.put(bass(c.b, 0.35 * beat, 0.6), t0 + 2.5 * beat, 0.36, 0.5);
-      if (k % 4 === 3) T.put(bass(c.b + 12, 0.3 * beat, 0.5), t0 + 3.5 * beat, 0.28, 0.5);
-      if (!breakdown) {
-        for (let b = 0; b < 4; b++) T.put(kick(R, 0.9), t0 + b * beat, 0.32, 0.5);
-        for (let b = 0; b < 4; b++) T.put(hat(R, 0.8 + R() * 0.3), t0 + (b + 0.5) * beat + human(R, 0.008), 0.07, 0.62);
-        T.put(rim(R, 0.7), t0 + 1 * beat, 0.035, 0.42);
-        T.put(rim(R, 0.7), t0 + 3 * beat, 0.035, 0.42);
+      const quiet = k >= 24 && k < 28; // pulse drops out for a moment
+      if (k % 2 === 0) c.v.forEach((m, i) => keys.put(epiano(m, bar * 1.6, 0.4), t0 + human(R) + i * 0.012, 0.14, 0.35 + i * 0.1));
+      else if (R() < 0.5) keys.put(epiano(c.v[3] + 12, beat, 0.25), t0 + 2.5 * beat, 0.07, 0.65); // a single soft answer note
+      T.put(bass(c.b, bar * 0.8, 0.7), t0 + human(R, 0.006), 0.3, 0.5);
+      if (!quiet) {
+        for (let b = 0; b < 4; b++) T.put(kick(R, 0.7), t0 + b * beat, 0.16, 0.5);
+        for (let b = 0; b < 4; b++) T.put(hat(R, 0.6), t0 + (b + 0.5) * beat + human(R, 0.008), 0.03, 0.62);
       }
-      // a sparse bell note now and then
-      if (k % 8 === 6) T.put(bell(c.v[3] + 12, 0.8), t0 + 2 * beat, 0.05, 0.7);
     }
-    lowpassTrack(keys, 3200);
-    T.mix(reverb(keys, 0.3));
-    vinyl(T, R, 0.5, 0.003);
-    return reverb(lowpassTrack(T, 5200), 0.12);
+    lowpassTrack(keys, 2400);
+    T.mix(reverb(keys, 0.35));
+    vinyl(T, R, 0.35, 0.0025);
+    return reverb(lowpassTrack(T, 4000), 0.15);
   },
 
-  // 60 BPM, 16 bars = 64 s. Gentle piano, broken chords and a slow melody.
+  // 60 BPM, 16 bars = 64 s. Quiet piano: a slow broken chord and one or two melody notes a bar.
   'classical-piano'(R) {
     const beat = 1, bar = 4, bars = 16;
     const T = new Track(bar * bars);
     // C | Am | F | G | C/E | F | Dm7 | G
     const prog = [
-      { r: 48, tones: [48, 55, 60, 64], mel: [72, 76, 79] },
-      { r: 45, tones: [45, 52, 57, 60], mel: [69, 72, 76] },
-      { r: 41, tones: [41, 48, 53, 57], mel: [69, 72, 77] },
-      { r: 43, tones: [43, 50, 55, 59], mel: [71, 74, 79] },
-      { r: 40, tones: [40, 48, 52, 55], mel: [72, 76, 79] },
-      { r: 41, tones: [41, 48, 53, 57], mel: [69, 72, 77] },
-      { r: 38, tones: [38, 45, 50, 53], mel: [69, 72, 74] },
-      { r: 43, tones: [43, 50, 55, 59], mel: [71, 74, 77] },
+      { tones: [48, 55, 64, 55], mel: [72, 76, 79] },
+      { tones: [45, 52, 60, 52], mel: [69, 72, 76] },
+      { tones: [41, 48, 57, 48], mel: [69, 72, 77] },
+      { tones: [43, 50, 59, 50], mel: [71, 74, 79] },
+      { tones: [40, 48, 55, 48], mel: [72, 76, 79] },
+      { tones: [41, 48, 57, 48], mel: [69, 72, 77] },
+      { tones: [38, 45, 53, 45], mel: [69, 72, 74] },
+      { tones: [43, 50, 59, 50], mel: [71, 74, 77] },
     ];
     let last = 76;
     for (let k = 0; k < bars; k++) {
       const c = chordAt(prog, k);
       const t0 = k * bar;
-      // left hand: rolling eighths, held with the pedal
-      const pattern = [0, 1, 2, 3, 2, 1, 2, 3];
-      pattern.forEach((p, i) => T.put(piano(c.tones[p], bar - i * 0.5 + 0.2, i === 0 ? 0.9 : 0.6), t0 + i * 0.5 * beat + human(R, 0.02), 0.13, 0.35 + p * 0.06));
-      // right hand: two or three long notes, mostly stepwise
-      const times = k % 4 === 3 ? [0, 2] : R() < 0.5 ? [0, 2, 3] : [0, 1.5, 3];
+      c.tones.forEach((m, i) => T.put(piano(m, bar - i + 0.3, i === 0 ? 0.7 : 0.45), t0 + i * beat + human(R, 0.03), 0.12, 0.38 + i * 0.05));
+      const times = k % 4 === 3 ? [0] : R() < 0.6 ? [0] : [0, 2.5];
       times.forEach((tb, i) => {
-        const options = c.mel.concat(c.mel.map((m) => m + 2).filter((m) => R() < 0.3));
-        options.sort((a, b) => Math.abs(a - last) - Math.abs(b - last));
-        const m = options[Math.min(options.length - 1, Math.floor(R() * 2))];
+        const options = [...c.mel].sort((a, b) => Math.abs(a - last) - Math.abs(b - last));
+        const m = options[Math.floor(R() * 2)];
         last = m;
         const d = (times[i + 1] ?? 4) - tb;
-        T.put(piano(m, d * beat + 0.3, 0.75 + R() * 0.15), t0 + tb * beat + human(R, 0.025), 0.2, 0.6);
+        T.put(piano(m, d * beat + 0.4, 0.55), t0 + tb * beat + human(R, 0.03), 0.17, 0.6);
       });
     }
-    return reverb(lowpassTrack(T, 6500), 0.38, 0.86, 0.3);
+    return reverb(lowpassTrack(T, 4800), 0.42, 0.87, 0.35);
   },
 
-  // 80 BPM, 20 bars = 60 s. Am9 | Fmaj7 | Cmaj7 | G6 with a soft arp and beat.
+  // 80 BPM, 20 bars = 60 s. Am9 | Fmaj7 | Cmaj7 | G6: a hazy pad, a few soft notes, a faint heartbeat kick.
   'lofi-electronic'(R) {
     const beat = 0.75, bar = beat * 4, bars = 20;
     const T = new Track(bar * bars);
@@ -327,65 +316,50 @@ const pieces = {
     for (let k = 0; k < bars; k++) {
       const c = chordAt(prog, k);
       const t0 = k * bar;
-      c.v.forEach((m, i) => pads.put(pad(m, bar - 0.2, 0.8, 3), t0, 0.1, 0.3 + i * 0.13));
-      T.put(bass(c.b, bar * 0.45, 0.8), t0, 0.34, 0.5);
-      T.put(bass(c.b, bar * 0.2, 0.55), t0 + 2.5 * beat, 0.26, 0.5);
-      // arpeggio, eighths, ping-pong
-      const notes = [...c.v, ...c.v.slice(1, 3).reverse()].map((m) => m + 12);
-      for (let i = 0; i < 8; i++) {
-        if (R() < 0.22) continue;
-        const swing = i % 2 ? 0.06 : 0;
-        T.put(epiano(notes[i % notes.length], 0.18, 0.5), t0 + (i * 0.5 + swing) * beat, 0.075, i % 2 ? 0.72 : 0.28);
-      }
+      c.v.forEach((m, i) => pads.put(pad(m, bar - 0.2, 0.7, 2), t0, 0.1, 0.3 + i * 0.13));
+      T.put(bass(c.b, bar * 0.7, 0.6), t0, 0.26, 0.5);
+      // two or three soft notes per bar, never busy
+      const spots = [0, 1.5, 2, 3].filter(() => R() < 0.55).slice(0, 3);
+      spots.forEach((b) => T.put(epiano(c.v[Math.floor(R() * 4)] + 12, 0.5, 0.35), t0 + b * beat + human(R, 0.01), 0.06, 0.3 + R() * 0.4));
       if (k % 5 !== 4) {
-        T.put(kick(R, 0.9), t0, 0.34, 0.5);
-        T.put(kick(R, 0.6), t0 + 2.5 * beat, 0.3, 0.5);
-        T.put(brush(R, 0.8, 0.14), t0 + 1 * beat, 0.11, 0.45);
-        T.put(brush(R, 0.8, 0.14), t0 + 3 * beat, 0.11, 0.45);
-        for (let i = 0; i < 8; i++) T.put(hat(R, i % 2 ? 0.6 : 0.9, 0.035), t0 + (i * 0.5 + (i % 2 ? 0.06 : 0)) * beat, 0.05, 0.6);
+        T.put(kick(R, 0.6), t0, 0.18, 0.5);
+        T.put(brush(R, 0.6, 0.12), t0 + 2 * beat, 0.05, 0.45);
       }
     }
-    lowpassTrack(pads, 1400);
+    lowpassTrack(pads, 1100);
     T.mix(pads);
-    vinyl(T, R, 0.8, 0.004);
-    return reverb(lowpassTrack(T, 3800), 0.25);
+    vinyl(T, R, 0.6, 0.0035);
+    return reverb(lowpassTrack(T, 3000), 0.3);
   },
 
-  // 80 BPM swing, 20 bars = 60 s. Dm9 | G13 | Cmaj9 | A7b9: brushes, walking bass, soft comping.
+  // 80 BPM, 20 bars = 60 s. Dm9 | G13 | Cmaj9 | A7b9 in a slow two-feel, brushes barely there.
   'late-night-jazz'(R) {
     const beat = 0.75, bar = beat * 4, bars = 20, sw = 2 / 3;
     const T = new Track(bar * bars);
     const keys = new Track(bar * bars);
     const prog = [
-      { b: 38, walk: [38, 41, 45, 42], v: [53, 57, 60, 64] },
-      { b: 43, walk: [43, 47, 50, 49], v: [53, 57, 59, 64] },
-      { b: 36, walk: [36, 40, 43, 44], v: [52, 55, 59, 62] },
-      { b: 45, walk: [45, 43, 40, 39], v: [55, 58, 61, 64] },
+      { two: [38, 45], v: [53, 57, 60, 64] },
+      { two: [43, 38], v: [53, 57, 59, 64] },
+      { two: [36, 43], v: [52, 55, 59, 62] },
+      { two: [45, 40], v: [55, 58, 61, 64] },
     ];
     for (let k = 0; k < bars; k++) {
       const c = chordAt(prog, k);
       const t0 = k * bar;
-      // walking bass
-      c.walk.forEach((m, i) => T.put(bass(m, beat * 0.88, i === 0 ? 0.95 : 0.8), t0 + i * beat + human(R, 0.01), 0.42, 0.45));
-      // comping: varied rhythms, always soft
-      const comp = [[[0, 1.2]], [[1 + sw, 0.6], [3, 0.5]], [[0, 0.8], [2 + sw, 0.9]], [[1 + sw, 1.6]]][Math.floor(R() * 4)];
-      comp.forEach(([b, d]) => c.v.forEach((m, i) => keys.put(epiano(m, d * beat, 0.5 + R() * 0.15), t0 + b * beat + human(R) + i * 0.008, 0.16, 0.6 + i * 0.05)));
-      // ride: spang-a-lang
-      [0, 1, 1 + sw, 2, 3, 3 + sw].forEach((b) => T.put(hat(R, Number.isInteger(b) ? 0.7 : 0.45, 0.12), t0 + b * beat + human(R, 0.006), 0.045, 0.7));
-      // brushes: slow swish every beat plus a soft slap on 2 and 4
-      for (let b = 0; b < 4; b++) T.put(brush(R, 0.5, 0.5), t0 + b * beat, 0.05, 0.4);
-      T.put(brush(R, 0.9, 0.12), t0 + 1 * beat, 0.09, 0.38);
-      T.put(brush(R, 0.9, 0.12), t0 + 3 * beat, 0.09, 0.38);
-      // sparse vibes phrase every few bars
-      if (k % 4 === 2) [0, 1, 2].forEach((i) => T.put(bell(c.v[3 - i] + 12, 0.7), t0 + (2 + i * sw) * beat, 0.055, 0.25));
+      c.two.forEach((m, i) => T.put(bass(m, beat * 1.8, 0.75), t0 + i * 2 * beat + human(R, 0.01), 0.36, 0.45));
+      const at = R() < 0.5 ? 0 : 1 + sw;
+      c.v.forEach((m, i) => keys.put(epiano(m, beat * 2.2, 0.38), t0 + at * beat + human(R) + i * 0.012, 0.14, 0.6 + i * 0.05));
+      for (let b = 0; b < 4; b++) T.put(brush(R, 0.35, 0.55), t0 + b * beat, 0.03, 0.4);
+      T.put(brush(R, 0.6, 0.12), t0 + 1 * beat, 0.045, 0.38);
+      T.put(brush(R, 0.6, 0.12), t0 + 3 * beat, 0.045, 0.38);
     }
-    lowpassTrack(keys, 3000);
-    T.mix(reverb(keys, 0.28));
-    vinyl(T, R, 0.25, 0.0025);
-    return reverb(lowpassTrack(T, 5000), 0.18);
+    lowpassTrack(keys, 2600);
+    T.mix(reverb(keys, 0.32));
+    vinyl(T, R, 0.2, 0.002);
+    return reverb(lowpassTrack(T, 4000), 0.2);
   },
 
-  // 72 BPM shuffle, 24 bars = 80 s. Two times round a slow 12-bar in A.
+  // 72 BPM, 24 bars = 80 s. A slow 12-bar in A: held chords, a soft bass note, a rare guitar phrase.
   'slow-blues'(R) {
     const beat = 60 / 72, bar = beat * 4, bars = 24, sw = 2 / 3;
     const T = new Track(bar * bars);
@@ -394,38 +368,27 @@ const pieces = {
     const D = { r: 50, v: [54, 57, 60, 62] };
     const E = { r: 52, v: [56, 59, 62, 64] };
     const form = [A, A, A, A, D, D, A, A, E, D, A, E];
-    const pent = [69, 72, 74, 75, 76, 79, 81];
+    const pent = [69, 72, 74, 76, 79, 81];
     for (let k = 0; k < bars; k++) {
       const c = form[k % 12];
       const t0 = k * bar;
-      const r = c.r;
-      // boogie line on a muted low string
-      [[0, 7], [0, 9], [0, 10], [0, 9]].forEach(([a, b], i) => {
-        T.put(string(r + a, beat * 0.5, 0.8, R, 0.35), t0 + i * beat + human(R, 0.01), 0.2, 0.4);
-        T.put(string(r + b, beat * 0.3, 0.65, R, 0.35), t0 + (i + sw) * beat + human(R, 0.01), 0.2, 0.4);
-      });
-      // soft keys on 2 and 4
-      [1, 3].forEach((b) => c.v.forEach((m, i) => keys.put(epiano(m, beat * 0.55, 0.45), t0 + b * beat + human(R) + i * 0.007, 0.13, 0.62)));
-      // a little guitar lick in some bars
-      if ([1, 3, 5, 9].includes(k % 12) && R() < 0.85) {
-        let i = 2 + Math.floor(R() * 3);
-        const n = 3 + Math.floor(R() * 3);
-        for (let q = 0; q < n; q++) {
+      if (k === 0 || form[(k + 11) % 12] !== c || k % 2 === 0) c.v.forEach((m, i) => keys.put(epiano(m, bar * 0.95, 0.35), t0 + human(R) + i * 0.015, 0.13, 0.6));
+      T.put(string(c.r - 12, beat * 1.5, 0.7, R, 0.3), t0 + human(R, 0.01), 0.22, 0.4);
+      T.put(string(c.r - 5, beat * 0.8, 0.5, R, 0.3), t0 + (2 + sw) * beat + human(R, 0.01), 0.16, 0.4);
+      if (k % 4 === 1 && R() < 0.8) {
+        let i = 1 + Math.floor(R() * 3);
+        for (let q = 0; q < 2 + Math.floor(R() * 2); q++) {
           i = Math.max(0, Math.min(pent.length - 1, i + (R() < 0.6 ? -1 : 1)));
-          T.put(string(pent[i], beat * 0.7, 0.8, R, 0.55), t0 + (2 + q * sw * 0.75) * beat + human(R, 0.015), 0.16, 0.66);
+          T.put(string(pent[i], beat * 1.2, 0.6, R, 0.45), t0 + (2 + q * sw * 1.5) * beat + human(R, 0.015), 0.12, 0.66);
         }
       }
-      // drums: very soft
-      T.put(kick(R, 0.7), t0, 0.22, 0.5);
-      T.put(kick(R, 0.5), t0 + 2 * beat, 0.2, 0.5);
-      T.put(brush(R, 0.9, 0.14), t0 + 1 * beat, 0.08, 0.45);
-      T.put(brush(R, 0.9, 0.14), t0 + 3 * beat, 0.08, 0.45);
-      for (let b = 0; b < 4; b++) T.put(hat(R, 0.5, 0.08), t0 + (b + sw) * beat, 0.03, 0.62);
+      T.put(brush(R, 0.6, 0.14), t0 + 1 * beat, 0.04, 0.45);
+      T.put(brush(R, 0.6, 0.14), t0 + 3 * beat, 0.04, 0.45);
     }
-    lowpassTrack(keys, 2600);
-    T.mix(reverb(keys, 0.25));
-    vinyl(T, R, 0.3, 0.0025);
-    return reverb(lowpassTrack(T, 4500), 0.22);
+    lowpassTrack(keys, 2200);
+    T.mix(reverb(keys, 0.3));
+    vinyl(T, R, 0.25, 0.002);
+    return reverb(lowpassTrack(T, 3800), 0.25);
   },
 
   // ---------- background sounds ----------
