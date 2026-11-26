@@ -383,7 +383,8 @@ function momentBuffers(id, variant) {
 const momentsDir = path.join(__dirname, '..', 'public', 'moments');
 fs.mkdirSync(momentsDir, { recursive: true });
 const { MOMENTS } = require('../src/themes');
-MOMENTS.filter((m) => m.variants).forEach((m) => {
+const MODELLED = Object.keys(require('./make-moments').KINDS); // made by make-moments.js
+MOMENTS.filter((m) => m.variants && !MODELLED.includes(m.id)).forEach((m) => {
   for (let v = 1; v <= m.variants; v++) {
     const { L, R } = momentBuffers(m.id, v);
     const wav = path.join(tmp, `${m.id}-${v}.wav`);
