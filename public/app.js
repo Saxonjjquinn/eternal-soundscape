@@ -16,22 +16,63 @@
   const layerCount = () => state.ambience.length + (state.music ? 1 : 0);
   const gradient = (c) => `linear-gradient(135deg, ${c[0]}, ${c[1]})`;
 
-  // ---------- single-sound audition (the ▶ on each card) ----------
-  let audition = null;
-  function stopAudition() {
-    if (audition) { audition.el.pause(); audition.btn.innerHTML = PLAY; audition = null; }
+  // ---------- listening to sounds (the ▶ on each card, and volume changes) ----------
+  // Everything plays through Web Audio gain so volume changes are instant
+  // (an <audio> element's volume can't be changed on iPhones).
+  let actx;
+  function audioCtx() {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+    return actx;
   }
-  function playAudition(btn, src, { loop = true } = {}) {
+  // key: which volume choice controls this sound ('bgLevel' / 'musicLevel'), or null for a fixed level
+  function makeSound(src, { key = null, level = 1, scale = 1, loop = true } = {}) {
+    const c = audioCtx();
+    const el = new Audio(src);
+    el.loop = loop;
+    el.crossOrigin = 'anonymous';
+    const g = c.createGain();
+    g.gain.value = curve(key ? state[key] : level) * scale;
+    c.createMediaElementSource(el).connect(g).connect(c.destination);
+    el.play().catch(() => {});
+    return { el, g, key, scale };
+  }
+  let audition = null; // { sounds, btn, timer }
+  function stopAudition() {
+    if (!audition) return;
+    const { sounds, btn, timer } = audition;
+    clearTimeout(timer);
+    const c = audioCtx();
+    sounds.forEach((x) => { x.g.gain.setTargetAtTime(0, c.currentTime, 0.05); setTimeout(() => x.el.pause(), 300); });
+    if (btn) btn.innerHTML = PLAY;
+    audition = null;
+  }
+  function startAudition(btn, sounds, { stopAfter = 0 } = {}) {
+    stopClipPreview();
+    audition = { sounds, btn, timer: stopAfter ? setTimeout(stopAudition, stopAfter) : null };
+    if (btn) btn.innerHTML = PAUSE;
+    sounds.forEach((x) => x.el.addEventListener('ended', () => { if (audition && audition.sounds === sounds && !x.el.loop) stopAudition(); }));
+  }
+  function playAudition(btn, src, { loop = true, key = null } = {}) {
     const same = audition && audition.btn === btn;
     stopAudition();
     if (same) return;
-    stopClipPreview();
-    const el = new Audio(src);
-    el.loop = loop;
-    el.play().catch(() => {});
-    el.addEventListener('ended', () => { if (audition && audition.el === el) stopAudition(); });
-    audition = { el, btn };
-    btn.innerHTML = PAUSE;
+    startAudition(btn, [makeSound(src, { loop, key })]);
+  }
+  // A volume choice changes what's playing straight away. If nothing of that
+  // kind is playing, play the chosen sounds for a few seconds at the new level.
+  function levelChanged(key) {
+    const c = audioCtx();
+    const matching = audition ? audition.sounds.filter((x) => x.key === key) : [];
+    if (matching.length) {
+      matching.forEach((x) => x.g.gain.setTargetAtTime(curve(state[key]) * x.scale, c.currentTime, 0.03));
+      return;
+    }
+    const ids = key === 'bgLevel' ? state.ambience : key === 'musicLevel' && state.music ? [state.music] : [];
+    if (!ids.length) return;
+    stopAudition();
+    const scale = 1 / Math.sqrt(ids.length);
+    startAudition(null, ids.map((id) => makeSound(`/beds/${id}.mp3`, { key, scale })), { stopAfter: 12000 });
   }
 
   // ---------- favourite combinations ----------
@@ -72,21 +113,15 @@
     });
   }
   // a combo preview plays its sounds together at the combo's levels
-  let comboAudio = [];
   function playCombo(btn, c) {
     const same = audition && audition.btn === btn;
     stopAudition();
-    comboAudio.forEach((a) => a.pause());
-    comboAudio = [];
     if (same) return;
-    stopClipPreview();
-    const n = c.ambience.length + 1;
-    const mk = (id, level) => { const a = new Audio(`/beds/${id}.mp3`); a.loop = true; a.volume = Math.min(1, curve(level) / Math.sqrt(n) * 1.2); a.play().catch(() => {}); return a; };
-    comboAudio = [...c.ambience.map((id) => mk(id, c.bgLevel)), mk(c.music, c.musicLevel)];
-    const first = comboAudio[0];
-    audition = { el: { pause: () => comboAudio.forEach((a) => a.pause()) }, btn };
-    btn.innerHTML = PAUSE;
-    void first;
+    const scale = 1.2 / Math.sqrt(c.ambience.length + 1);
+    startAudition(btn, [
+      ...c.ambience.map((id) => makeSound(`/beds/${id}.mp3`, { level: c.bgLevel, scale })),
+      makeSound(`/beds/${c.music}.mp3`, { level: c.musicLevel, scale }),
+    ]);
   }
 
   // ---------- sound cards ----------
@@ -105,7 +140,7 @@
     el.querySelector('h3').textContent = t.name;
     el.querySelector('p').textContent = t.blurb;
     const btn = el.querySelector('.play');
-    btn.addEventListener('click', (e) => { e.stopPropagation(); playAudition(btn, `/beds/${t.id}.mp3`); });
+    btn.addEventListener('click', (e) => { e.stopPropagation(); playAudition(btn, `/beds/${t.id}.mp3`, { key: t.kind === 'music' ? 'musicLevel' : 'bgLevel' }); });
     const go = () => (locked ? openPlus() : onToggle());
     el.addEventListener('click', go);
     el.addEventListener('keydown', (e) => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(); } });
@@ -171,6 +206,7 @@
       b.addEventListener('click', () => {
         state[key] = v;
         renderLevel(el, key);
+        levelChanged(key);
       });
       wrap.appendChild(b);
     });
@@ -195,7 +231,7 @@
       const p = b.querySelector('.play');
       if (p) p.addEventListener('click', (e) => {
         e.stopPropagation();
-        playAudition(p, `/moments/${m.id}-${1 + Math.floor(Math.random() * m.variants)}.mp3`, { loop: false });
+        playAudition(p, `/moments/${m.id}-${1 + Math.floor(Math.random() * m.variants)}.mp3`, { loop: false, key: 'bgLevel' });
       });
       wrap.appendChild(b);
     });
