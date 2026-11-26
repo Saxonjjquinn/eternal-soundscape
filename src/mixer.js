@@ -19,14 +19,21 @@ const { MAX_CLIP_SECONDS } = require('./themes');
 
 const SR = 44100;
 
-function run(args) {
+function run(args, loglevel = 'error') {
   return new Promise((resolve, reject) => {
-    const p = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
+    const p = spawn(ffmpeg, ['-hide_banner', '-loglevel', loglevel, '-y', ...args]);
     let err = '';
     p.stderr.on('data', (d) => (err += d));
     p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim() || `ffmpeg exited ${code}`))));
+    p.on('close', (code) => (code === 0 ? resolve(err) : reject(new Error(err.trim() || `ffmpeg exited ${code}`))));
   });
+}
+
+// Integrated loudness (LUFS) of a file.
+async function measureLufs(file) {
+  const out = await run(['-i', file, '-af', 'ebur128', '-f', 'null', '-'], 'info');
+  const m = out.match(/I:\s+(-?[\d.]+) LUFS\s*\n\s*Threshold/);
+  return m ? Number(m[1]) : null;
 }
 
 // Duration of a 16-bit stereo PCM wav written by us.
@@ -174,7 +181,10 @@ async function renderTrack(items, total, output, extra = () => '') {
  * @param {number} [o.seed]
  * @param {string} [o.title]
  */
-async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1, title }) {
+async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1, title, bedLevel = 0.5 }) {
+  // bedLevel (0.25–1) sets how loud the background sounds and moments sit under the voices
+  // mapped on a curve so each step is clearly audible (0.25→0.16, 0.5→0.38, 0.75→0.63, 1→0.9)
+  const level = Math.pow(Math.max(0.1, Math.min(1, Number(bedLevel) || 0.5)), 1.25) * 0.9;
   fs.mkdirSync(workDir, { recursive: true });
   const prepared = [];
   const durations = [];
@@ -199,7 +209,7 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
   if (plan.moments.length) {
     momentsWav = path.join(workDir, 'moments.wav');
     await renderTrack(
-      plan.moments.map((m) => ({ ...m, gain: 0.8, file: path.join(moments.dir, `${moments.id}-${m.variant}.mp3`) })),
+      plan.moments.map((m) => ({ ...m, gain: +(0.8 * Math.sqrt(level)).toFixed(3), file: path.join(moments.dir, `${moments.id}-${m.variant}.mp3`) })),
       seconds,
       momentsWav
     );
@@ -225,24 +235,32 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
     layerInfo.push({ fadeStart, fadeLen });
     f.push(
       `[${k}:a]aformat=sample_rates=${SR}:channel_layouts=stereo,atrim=0:${seconds},asetpts=PTS-STARTPTS,` +
-        `volume=${(Math.max(0, Math.min(1, l.volume)) * layerScale * 1.25).toFixed(3)},` +
+        `volume=${(Math.max(0, Math.min(1, l.volume)) * layerScale * 1.25 * level).toFixed(3)},` +
         `volume='0.86+0.14*sin(2*PI*t/${period}+${phase})':eval=frame,` +
         `afade=t=in:st=${fadeStart}:d=${fadeLen}[b${k}]`
     );
   });
   const bedLabels = layers.map((_, k) => `[b${k}]`).join('');
   f.push(layers.length > 1 ? `${bedLabels}amix=inputs=${layers.length}:normalize=0:duration=first[bed]` : `[b0]anull[bed]`);
-  f.push(`[bed][${vIn}:a]sidechaincompress=threshold=0.02:ratio=3:attack=150:release=1800[ducked]`);
+  f.push(`[bed][${vIn}:a]sidechaincompress=threshold=0.015:ratio=4:attack=150:release=1800[ducked]`);
   const finalInputs = `[ducked][${vIn + 1}:a]${momentsWav ? `[${vIn + 2}:a]` : ''}`;
   f.push(
     `${finalInputs}amix=inputs=${momentsWav ? 3 : 2}:normalize=0:duration=first,` +
-      `afade=t=in:d=4,afade=t=out:st=${seconds - 6}:d=6,loudnorm=I=-20:TP=-1.5:LRA=11[out]`
+      `afade=t=in:d=4,afade=t=out:st=${seconds - 6}:d=6[out]`
   );
-
-  args.push('-filter_complex', f.join(';'), '-map', '[out]', '-ar', String(SR), '-c:a', 'libmp3lame', '-b:a', '192k');
-  if (title) args.push('-metadata', `title=${title}`);
-  args.push(output);
+  const premaster = path.join(workDir, 'premaster.wav');
+  args.push('-filter_complex', f.join(';'), '-map', '[out]', '-c:a', 'pcm_s16le', premaster);
   await run(args);
+
+  // Level the finished mix with one fixed gain (not an automatic leveller,
+  // which would pull the quiet ambience-only stretches up between voices),
+  // then a gentle peak limiter.
+  const lufs = await measureLufs(premaster);
+  const gainDb = lufs == null ? 0 : Math.max(-20, Math.min(20, -20 - lufs));
+  const master = ['-i', premaster, '-af', `volume=${gainDb.toFixed(2)}dB,alimiter=limit=0.84:attack=5:release=80:level=disabled`, '-ar', String(SR), '-c:a', 'libmp3lame', '-b:a', '192k'];
+  if (title) master.push('-metadata', `title=${title}`);
+  master.push(output);
+  await run(master);
 
   return {
     total: seconds,

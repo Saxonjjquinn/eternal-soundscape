@@ -171,3 +171,5 @@ dialog::backdrop { background: rgba(27, 23, 36, .55); }
 .tl-axis span:first-child { transform: none; }
 .tl-head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); opacity: .7; pointer-events: none; }
 @media (max-width: 480px) { .tl-row { grid-template-columns: 64px 1fr; } }
+.bedlevel { margin-top: 18px; display: grid; gap: 10px; }
+.bedlevel-label { font-weight: 700; }

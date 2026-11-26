@@ -7,7 +7,8 @@
   const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
   let config;
-  const state = { layers: [], moments: 'none', minutes: 2, clips: [], plus: false };
+  const state = { layers: [], bedLevel: 0.5, moments: 'none', minutes: 2, clips: [], plus: false };
+  const LEVELS = [0.25, 0.5, 0.75, 1];
   try { state.plus = localStorage.getItem('le-plus') === '1'; } catch {}
   const tier = () => config.tiers[state.plus ? 'plus' : 'free'];
   const themeById = (id) => config.themes.find((t) => t.id === id);
@@ -93,13 +94,13 @@
       el.querySelector('h3').textContent = t.name;
       el.querySelector('p').textContent = t.blurb;
       const btn = el.querySelector('.play');
-      btn.addEventListener('click', (e) => { e.stopPropagation(); playPreview(btn, [{ src: `/beds/${t.id}.mp3` }]); });
+      btn.addEventListener('click', (e) => { e.stopPropagation(); playPreview(btn, [{ src: `/beds/${t.id}.mp3`, volume: on ? state.layers[idx].volume * state.bedLevel : 1 }]); });
       const slider = el.querySelector('.vol input');
       if (slider) {
         ['click', 'keydown', 'pointerdown'].forEach((ev) => el.querySelector('.vol').addEventListener(ev, (e) => e.stopPropagation()));
         slider.addEventListener('input', () => {
           state.layers[idx].volume = slider.value / 100;
-          if (previewOwner === $('#previewMix')) previews.forEach((a, k) => (a.volume = state.layers[k] ? state.layers[k].volume : a.volume));
+          if (previewOwner === $('#previewMix')) previews.forEach((a, k) => (a.volume = state.layers[k] ? state.layers[k].volume * state.bedLevel : a.volume));
           renderMixbar();
         });
       }
@@ -129,7 +130,27 @@
   }
   const mixBtn = $('#previewMix');
   mixBtn.dataset.label = '▶ Hear them together';
-  mixBtn.addEventListener('click', () => playPreview(mixBtn, state.layers.map((l) => ({ src: `/beds/${l.id}.mp3`, volume: l.volume }))));
+  mixBtn.addEventListener('click', () => playPreview(mixBtn, state.layers.map((l) => ({ src: `/beds/${l.id}.mp3`, volume: l.volume * state.bedLevel }))));
+
+  // ---------- overall background level ----------
+  function renderBedLevel() {
+    const wrap = $('#bedLevel');
+    wrap.innerHTML = '';
+    LEVELS.forEach((v) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'len';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(state.bedLevel === v));
+      b.innerHTML = `${v * 100}%${v === 0.5 ? '<span class="lock">default</span>' : v === 0.25 ? '<span class="lock">very soft</span>' : ''}`;
+      b.addEventListener('click', () => {
+        state.bedLevel = v;
+        previews.forEach((a, k) => { if (previewOwner === mixBtn && state.layers[k]) a.volume = state.layers[k].volume * v; });
+        renderBedLevel();
+      });
+      wrap.appendChild(b);
+    });
+  }
 
   // ---------- moments ----------
   function renderMoments() {
@@ -443,6 +464,7 @@
 
     const fd = new FormData();
     fd.append('layers', JSON.stringify(state.layers));
+    fd.append('bedLevel', String(state.bedLevel));
     fd.append('moments', state.moments);
     fd.append('minutes', String(state.minutes));
     fd.append('title', $('#title').value.trim());
@@ -584,6 +606,7 @@
   fetch('/api/config').then((r) => r.json()).then((c) => {
     config = c;
     setPlus(state.plus);
+    renderBedLevel();
     renderMoments();
     renderExamples();
   });

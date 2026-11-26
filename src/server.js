@@ -86,6 +86,7 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
     if (layers.length > tier.maxLayers) throw new Error(`You can layer up to ${tier.maxLayers} sounds${tierName === 'free' ? ' on the free plan' : ''}.`);
     const locked = layers.find((l) => !l.theme.free && tierName !== 'plus');
     if (locked) throw new Error(`${locked.theme.name} is a Plus sound.`);
+    const bedLevel = [0.25, 0.5, 0.75, 1].includes(Number(req.body.bedLevel)) ? Number(req.body.bedLevel) : 0.5;
     const moment = MOMENTS.find((m) => m.id === (req.body.moments || 'none')) || MOMENTS[0];
 
     if (!files.length) throw new Error('Please add at least one voice clip.');
@@ -113,6 +114,7 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
         seconds: Math.round(minutes * 60),
         output: path.join(dir, 'soundscape.mp3'),
         workDir,
+        bedLevel,
         seed: crypto.createHash('sha1').update(id).digest().readUInt32LE(0),
         title,
       }));
@@ -124,7 +126,7 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
     }
     timeline.unused = files.length - new Set(timeline.voices.map((v) => v.clip)).size;
     const meta = {
-      id, title, theme: layers[0].theme.id, layers: layers.map((l) => ({ id: l.theme.id, volume: l.volume })), moments: moment.id,
+      id, title, theme: layers[0].theme.id, layers: layers.map((l) => ({ id: l.theme.id, volume: l.volume })), bedLevel, moments: moment.id,
       minutes, clips: files.length, tier: tierName, createdAt: new Date().toISOString(), mixMs: Date.now() - started, timeline,
     };
     fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
