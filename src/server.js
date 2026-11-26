@@ -130,9 +130,10 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
     timeline.unused = files.length - new Set(timeline.voices.map((v) => v.clip)).size;
     const meta = {
       id, title, theme: layers[0].theme.id, layers: layers.map((l) => ({ id: l.theme.id, volume: l.volume })), bedLevel, moments: moment.id,
-      minutes, clips: files.length, tier: tierName, createdAt: new Date().toISOString(), mixMs: Date.now() - started, timeline,
+      minutes, clips: files.length, tier: tierName, preview: req.body.preview === '1', createdAt: new Date().toISOString(), mixMs: Date.now() - started, timeline,
     };
     fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+    dropPreview(req.body.replaces);
     res.json({ ...meta, listenUrl: `${baseUrl(req)}/s/${id}`, audioUrl: `/media/${id}.mp3`, downloadUrl: `/media/${id}.mp3?download=1` });
   } catch (e) {
     console.error('mix failed:', e.message);
@@ -143,6 +144,24 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
   } finally {
     cleanup();
   }
+});
+
+// A preview is a full soundscape that hasn't been kept yet. Making a new one
+// (or creating with changes) throws the old preview away.
+function dropPreview(id) {
+  const meta = id && readMeta(String(id));
+  if (meta && meta.preview) fs.rmSync(path.join(STORE, meta.id), { recursive: true, force: true });
+}
+
+// Keep a preview as the finished soundscape (the title can still change).
+app.post('/api/soundscapes/:id/keep', express.json(), (req, res) => {
+  const meta = readMeta(req.params.id);
+  if (!meta) return res.status(404).json({ error: 'That preview has expired. Please create it again.' });
+  meta.preview = false;
+  const title = String((req.body && req.body.title) || '').trim().slice(0, 80);
+  if (title) meta.title = title;
+  fs.writeFileSync(path.join(STORE, meta.id, 'meta.json'), JSON.stringify(meta, null, 2));
+  res.json({ ...meta, listenUrl: `${baseUrl(req)}/s/${meta.id}`, audioUrl: `/media/${meta.id}.mp3`, downloadUrl: `/media/${meta.id}.mp3?download=1` });
 });
 
 app.get('/api/soundscapes/:id', (req, res) => {

@@ -93,7 +93,15 @@
 
       <div class="submit-row">
         <div class="step-head"><span class="num">8</span><h2>Create your soundscape</h2></div>
-        <button class="btn primary big" id="submitBtn" type="submit">Create my soundscape</button>
+        <p class="muted">Tap Preview to hear exactly how it will sound. Change anything above and preview again until you love it.</p>
+        <div class="actions">
+          <button class="btn big" id="previewBtn" type="button">▶ Preview</button>
+          <button class="btn primary big" id="submitBtn" type="submit">Create my soundscape</button>
+        </div>
+        <div class="preview-box" id="previewBox" hidden>
+          <audio id="previewAudio" controls preload="auto"></audio>
+          <p class="muted small" id="previewNote"></p>
+        </div>
         <p class="error" id="formError" role="alert"></p>
       </div>
     </form>

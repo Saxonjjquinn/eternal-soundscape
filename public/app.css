@@ -200,3 +200,7 @@ dialog::backdrop { background: rgba(27, 23, 36, .55); }
 .subq .lengths { margin-top: 4px; }
 #comboList { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
 .combo .art { width: 48px; height: 48px; align-self: flex-start; }
+
+.preview-box { margin-top: 14px; display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr); }
+.preview-box audio { width: 100%; }
+.submit-row .actions { display: flex; flex-wrap: wrap; gap: 10px; }

@@ -134,7 +134,7 @@ const between = (r, a, b) => a + r() * (b - a);
  */
 function schedule(durations, total, { seed = 1, momentVariants = 0, momentDur = 6 } = {}) {
   const r = seeded(seed);
-  const head = between(r, 6, 10);
+  const head = total <= 60 ? between(r, 4, 6) : between(r, 6, 10);
   const tail = 8;
   const n = durations.length;
 
@@ -156,12 +156,17 @@ function schedule(durations, total, { seed = 1, momentVariants = 0, momentDur = 
     last = bag[bag.length - 1];
     return bag;
   };
-  let seq = [];
-  while (seq.length < count) seq.push(...nextBag());
-  seq = seq.slice(0, count);
+  const maxCount = n * (1 + Math.max(repeatsPerClip, 2));
+  let pool = [];
+  while (pool.length < maxCount) pool.push(...nextBag());
+  let seq = pool.slice(0, count);
   const minGap = 3;
-  const fits = (s) => s.reduce((a, c) => a + durations[c], 0) + minGap * (s.length - 1) <= room;
+  const used = (s) => s.reduce((a, c) => a + durations[c], 0) + minGap * (s.length - 1);
+  const fits = (s) => used(s) <= room;
   while (seq.length > 1 && !fits(seq)) seq.pop(); // drop repeats first, then whatever won't fit
+  // Never leave a long stretch of music alone: if there's still plenty of room,
+  // bring recordings back as soft echoes (even in short soundscapes).
+  while (seq.length < maxCount && room - used(seq) >= durations[pool[seq.length]] + 4 + minGap) seq.push(pool[seq.length]);
 
   const voices = [];
   const gaps = [];

@@ -500,14 +500,22 @@
   // ---------- submit ----------
   function showError(msg) { $('#formError').textContent = msg || ''; }
 
-  $('#create').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    showError('');
-    if (!state.clips.length) return showError('Add at least one recording (step 1).');
-    if (!layerCount()) return showError('Add at least one background sound or piece of music.');
-    if (state.clips.some((c) => c.status !== 'ready')) return showError('Hang on, still reading a recording…');
-    if (!$('#consent').checked) return showError('Please tick the permission box.');
+  // What the soundscape is made from (not the title), so we know if a preview is still current.
+  function fingerprint() {
+    return JSON.stringify([state.ambience, state.music, state.bgLevel, state.musicLevel, state.voiceLevel, state.moments, state.minutes,
+      state.clips.map((c) => [c.name, c.from, c.to, c.file.size])]);
+  }
+  let preview = null; // { id, fp, data }
 
+  function checkReady() {
+    if (!state.clips.length) return 'Add at least one recording (step 1).';
+    if (!layerCount()) return 'Add at least one background sound or piece of music.';
+    if (state.clips.some((c) => c.status !== 'ready')) return 'Hang on, still reading a recording…';
+    if (!$('#consent').checked) return 'Please tick the permission box (step 7).';
+    return '';
+  }
+
+  function buildForm(isPreview) {
     const layers = [
       ...state.ambience.map((id) => ({ id, volume: curve(state.bgLevel) })),
       ...(state.music ? [{ id: state.music, volume: curve(state.musicLevel) }] : []),
@@ -521,6 +529,8 @@
     fd.append('title', $('#title').value.trim());
     fd.append('consent', '1');
     fd.append('plus', state.plus ? '1' : '0');
+    if (isPreview) fd.append('preview', '1');
+    if (preview) fd.append('replaces', preview.id);
     const info = [];
     state.clips.forEach((c) => {
       if (c.pcm) {
@@ -533,20 +543,73 @@
       }
     });
     fd.append('clipInfo', JSON.stringify(info));
+    return fd;
+  }
 
+  async function send(url, opts, workingText) {
     stopAudition(); stopClipPreview();
+    $('#previewAudio').pause();
+    $('#workingText').textContent = workingText;
     $('#working').hidden = false;
-    $('#submitBtn').disabled = true;
+    $('#submitBtn').disabled = $('#previewBtn').disabled = true;
     try {
-      const res = await fetch('/api/soundscapes', { method: 'POST', body: fd });
+      const res = await fetch(url, opts);
       const data = await res.json().catch(() => ({ error: res.status === 413 ? 'That upload is too large.' : 'Something went wrong. Please try again.' }));
       if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+      return data;
+    } finally {
+      $('#working').hidden = true;
+      $('#submitBtn').disabled = $('#previewBtn').disabled = false;
+    }
+  }
+
+  $('#previewBtn').addEventListener('click', async () => {
+    showError('');
+    const problem = checkReady();
+    if (problem) return showError(problem);
+    const fp = fingerprint();
+    if (preview && preview.fp === fp) { $('#previewAudio').play().catch(() => {}); return; }
+    try {
+      const data = await send('/api/soundscapes', { method: 'POST', body: buildForm(true) }, 'Making your preview…');
+      preview = { id: data.id, fp, data };
+      $('#previewBox').hidden = false;
+      $('#previewAudio').src = data.audioUrl;
+      $('#previewAudio').play().catch(() => {});
+      $('#previewNote').textContent = 'This is exactly how it will sound. Happy? Tap Create. Otherwise change anything above and preview again.';
+    } catch (err) {
+      showError(err.message);
+    }
+  });
+
+  // if anything changes after a preview, say so
+  document.addEventListener('click', () => setTimeout(() => {
+    if (preview && !$('#previewBox').hidden) {
+      const stale = preview.fp !== fingerprint();
+      $('#previewNote').textContent = stale
+        ? 'You\'ve changed something since this preview. Tap Preview to hear the new version.'
+        : 'This is exactly how it will sound. Happy? Tap Create. Otherwise change anything above and preview again.';
+    }
+  }, 0));
+
+  $('#create').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    showError('');
+    const problem = checkReady();
+    if (problem) return showError(problem);
+    try {
+      let data;
+      if (preview && preview.fp === fingerprint()) {
+        // nothing changed since the preview, so keep it as it is
+        data = await send(`/api/soundscapes/${preview.id}/keep`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: $('#title').value.trim() }) }, 'Saving your soundscape…');
+      } else {
+        data = await send('/api/soundscapes', { method: 'POST', body: buildForm(false) }, 'Weaving your soundscape…');
+      }
+      preview = null;
+      $('#previewBox').hidden = true;
+      $('#previewAudio').removeAttribute('src');
       showResult(data);
     } catch (err) {
       showError(err.message);
-    } finally {
-      $('#working').hidden = true;
-      $('#submitBtn').disabled = false;
     }
   });
 
