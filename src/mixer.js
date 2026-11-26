@@ -59,6 +59,61 @@ async function prepareClip(input, output, from = 0, to = null) {
   return secs;
 }
 
+// Find the natural pauses in a prepared clip (between words and sentences).
+async function findPauses(file) {
+  const out = await run(['-i', file, '-af', 'silencedetect=noise=-36dB:d=0.35', '-f', 'null', '-'], 'info');
+  const starts = [...out.matchAll(/silence_start: (-?[\d.]+)/g)].map((m) => Number(m[1]));
+  const ends = [...out.matchAll(/silence_end: ([\d.]+)/g)].map((m) => Number(m[1]));
+  const total = wavSeconds(file);
+  return starts
+    .map((a, i) => [Math.max(0, a), ends[i] != null ? ends[i] : total])
+    .filter(([a, b]) => a > 0.3 && b < total - 0.3 && b - a >= 0.35);
+}
+
+// Lengthen the natural pauses in a recording so it fills more of the soundscape,
+// without ever cutting into words. Each pause grows by at most 4 s (so it never
+// becomes an odd silence), and the recording at most doubles in length.
+async function spaceClip(file, output, target) {
+  const dur = wavSeconds(file);
+  if (target <= dur + 0.5) return { file, dur, stretched: 0 };
+  const pauses = await findPauses(file);
+  if (!pauses.length) return { file, dur, stretched: 0 };
+  const cap = 4;
+  let want = Math.min(target - dur, dur, cap * pauses.length);
+  // share the extra time, giving longer pauses (sentence breaks) a bit more
+  const extra = pauses.map(() => 0);
+  let open = pauses.map((_, i) => i);
+  while (want > 0.05 && open.length) {
+    const w = open.map((i) => Math.sqrt(pauses[i][1] - pauses[i][0]));
+    const ws = w.reduce((a, b) => a + b, 0);
+    let used = 0;
+    open.forEach((i, k) => {
+      const add = Math.min(cap - extra[i], (want * w[k]) / ws);
+      extra[i] += add;
+      used += add;
+    });
+    want -= used;
+    open = open.filter((i) => extra[i] < cap - 0.01);
+  }
+  // cut in the middle of each pause and insert quiet there
+  const cuts = pauses.map(([a, b]) => (a + b) / 2);
+  const edges = [0, ...cuts, dur];
+  const f = [];
+  const parts = [];
+  for (let k = 0; k < edges.length - 1; k++) {
+    f.push(`[0:a]atrim=${edges[k].toFixed(3)}:${edges[k + 1].toFixed(3)},asetpts=PTS-STARTPTS[p${k}]`);
+    parts.push(`[p${k}]`);
+    if (k < cuts.length && extra[k] > 0.05) {
+      f.push(`aevalsrc=0|0:s=${SR}:d=${extra[k].toFixed(3)}[z${k}]`);
+      parts.push(`[z${k}]`);
+    }
+  }
+  f.push(`${parts.join('')}concat=n=${parts.length}:v=0:a=1[out]`);
+  await run(['-i', file, '-filter_complex', f.join(';'), '-map', '[out]', '-ac', '2', '-ar', String(SR), '-c:a', 'pcm_s16le', output]);
+  const out = wavSeconds(output);
+  return { file: output, dur: out, stretched: out - dur };
+}
+
 // Small deterministic random generator so a given soundscape can be rebuilt identically.
 function seeded(seed) {
   // mulberry32: well spread even for small seeds
@@ -198,6 +253,17 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
     const out = path.join(workDir, `clip${i}.wav`);
     durations.push(await prepareClip(clips[i].file, out, clips[i].from, clips[i].to));
     prepared.push(out);
+  }
+  // Give the recordings room to breathe. In short soundscapes (where each one
+  // plays once) stretch their pauses so they fill the length; in longer ones
+  // just open them up a little, since they come back as echoes anyway.
+  const n = clips.length;
+  const room = seconds - 16 - 6 * (n - 1);
+  for (let i = 0; i < n; i++) {
+    const target = seconds <= 120 ? room / n : durations[i] * 1.4;
+    const spaced = await spaceClip(prepared[i], path.join(workDir, `clip${i}-spaced.wav`), target);
+    prepared[i] = spaced.file;
+    durations[i] = spaced.dur;
   }
 
   const momentDur = moments && moments.id === 'bowl' ? 9 : 6;
