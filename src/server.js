@@ -105,7 +105,7 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
     let timeline;
     try {
       timeline = await queue(() => mix({
-        layers: layers.map((l) => ({ file: path.join(PUBLIC, 'beds', `${l.theme.id}.mp3`), volume: l.volume })),
+        layers: layers.map((l) => ({ file: path.join(PUBLIC, 'beds', `${l.theme.id}.mp3`), volume: l.volume, music: l.theme.kind === 'music' })),
         clips: files.map((f, i) => ({
           file: f.path,
           name: String((clipInfo[i] && clipInfo[i].name) || f.originalname || `Clip ${i + 1}`).replace(/\.[a-z0-9]{2,4}$/i, '').slice(0, 40),

@@ -178,7 +178,7 @@ async function renderTrack(items, total, output, extra = () => '') {
 
 /**
  * @param {object} o
- * @param {{file:string, volume:number}[]} o.layers  ambient beds (1–3), volume 0..1
+ * @param {{file:string, volume:number, music?:boolean}[]} o.layers  ambient beds (1–3), volume 0..1
  * @param {{file:string, from?:number, to?:number, name?:string}[]} o.clips
  * @param {{dir:string, id:string, variants:number}|null} o.moments
  * @param {number} o.seconds
@@ -235,8 +235,10 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
   const layerInfo = [];
   layers.forEach((l, k) => {
     // first layer fades in from the start; the others drift in one after another
-    const fadeStart = k === 0 ? 0 : +(k * between(r, 7, 11)).toFixed(1);
-    const fadeLen = k === 0 ? 4 : 10;
+    // Music starts right away at 10% of its chosen volume and rises slowly to it.
+    const musicRamp = Math.min(45, Math.max(15, seconds * 0.25));
+    const fadeStart = k === 0 || l.music ? 0 : +(k * between(r, 7, 11)).toFixed(1);
+    const fadeLen = l.music ? musicRamp : k === 0 ? 4 : 10;
     const period = between(r, 18, 34).toFixed(1); // slow "breathing" in volume
     const phase = (r() * 6.28).toFixed(2);
     layerInfo.push({ fadeStart, fadeLen });
@@ -244,7 +246,9 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
       `[${k}:a]aformat=sample_rates=${SR}:channel_layouts=stereo,atrim=0:${seconds},asetpts=PTS-STARTPTS,` +
         `volume=${(Math.max(0, Math.min(1, l.volume)) * layerScale * 1.25 * level).toFixed(3)},` +
         `volume='0.86+0.14*sin(2*PI*t/${period}+${phase})':eval=frame,` +
-        `afade=t=in:st=${fadeStart}:d=${fadeLen}[b${k}]`
+        (l.music
+          ? `volume='0.1+0.9*min(1,t/${musicRamp.toFixed(1)})':eval=frame,afade=t=in:d=2[b${k}]`
+          : `afade=t=in:st=${fadeStart}:d=${fadeLen}[b${k}]`)
     );
   });
   const bedLabels = layers.map((_, k) => `[b${k}]`).join('');

@@ -16,150 +16,6 @@
   const layerCount = () => state.ambience.length + (state.music ? 1 : 0);
   const gradient = (c) => `linear-gradient(135deg, ${c[0]}, ${c[1]})`;
 
-  // =====================================================================
-  // Live mix: your recordings play with the chosen sounds and music on top.
-  // Volume changes and new sounds are heard straight away.
-  // =====================================================================
-  const live = { ctx: null, playing: false, beds: new Map(), voiceSrc: null, clipIdx: 0, timer: null };
-  function ensureCtx() {
-    if (!live.ctx) {
-      const C = window.AudioContext || window.webkitAudioContext;
-      live.ctx = new C();
-      live.master = live.ctx.createGain();
-      live.master.connect(live.ctx.destination);
-      live.duck = live.ctx.createGain(); // beds dip while a voice plays, like the final mix
-      live.duck.connect(live.master);
-      live.bgBus = live.ctx.createGain();
-      live.musicBus = live.ctx.createGain();
-      live.bgBus.connect(live.duck);
-      live.musicBus.connect(live.duck);
-      live.voice = live.ctx.createGain();
-      live.voice.connect(live.master);
-    }
-    if (live.ctx.state === 'suspended') live.ctx.resume();
-    return live.ctx;
-  }
-  function applyLevels() {
-    if (!live.ctx) return;
-    const n = Math.max(1, layerCount());
-    const k = 1.1 / Math.sqrt(n);
-    const now = live.ctx.currentTime;
-    live.bgBus.gain.setTargetAtTime(curve(state.bgLevel) * k, now, 0.08);
-    live.musicBus.gain.setTargetAtTime(curve(state.musicLevel) * k, now, 0.08);
-  }
-  function syncBeds() {
-    if (!live.ctx) return;
-    const wanted = new Map(state.ambience.map((id) => [id, live.bgBus]));
-    if (state.music) wanted.set(state.music, live.musicBus);
-    for (const [id, b] of live.beds) {
-      if (!wanted.has(id)) {
-        b.gain.gain.setTargetAtTime(0, live.ctx.currentTime, 0.2);
-        setTimeout(() => { b.el.pause(); b.el.src = ''; }, 900);
-        live.beds.delete(id);
-      }
-    }
-    for (const [id, bus] of wanted) {
-      if (live.beds.has(id)) continue;
-      const el = new Audio(`/beds/${id}.mp3`);
-      el.loop = true;
-      el.crossOrigin = 'anonymous';
-      const src = live.ctx.createMediaElementSource(el);
-      const gain = live.ctx.createGain();
-      gain.gain.value = 0;
-      src.connect(gain).connect(bus);
-      const b = { el, gain };
-      live.beds.set(id, b);
-      if (live.playing) startBed(b);
-    }
-    applyLevels();
-    renderLivebar();
-  }
-  function startBed(b) {
-    b.el.play().catch(() => {});
-    b.gain.gain.setTargetAtTime(1, live.ctx.currentTime, 0.4); // drift in
-  }
-  function duck(on) {
-    if (!live.ctx) return;
-    live.duck.gain.setTargetAtTime(on ? 0.55 : 1, live.ctx.currentTime, on ? 0.08 : 0.6);
-  }
-  function readyClips() { return state.clips.filter((c) => c.status === 'ready' && c.buffer); }
-  function playNextVoice() {
-    clearTimeout(live.timer);
-    if (!live.playing) return;
-    const clips = readyClips();
-    if (!clips.length) { live.timer = setTimeout(playNextVoice, 1500); return; }
-    const c = clips[live.clipIdx % clips.length];
-    live.clipIdx++;
-    const src = live.ctx.createBufferSource();
-    src.buffer = c.buffer;
-    src.connect(live.voice);
-    // the first time round each recording plays clearly; after that it comes back softer
-    const echo = live.clipIdx > clips.length;
-    live.voice.gain.value = (c.previewGain || 1) * (echo ? 0.5 : 1) * curve(state.voiceLevel);
-    const dur = Math.max(0.3, c.to - c.from);
-    src.start(0, c.from, dur);
-    live.voiceSrc = src;
-    duck(true);
-    renderLivebar(c.name);
-    src.onended = () => {
-      if (live.voiceSrc !== src) return;
-      duck(false);
-      renderLivebar();
-      // a pause before the next voice (shorter than the real mix so you hear more)
-      const gap = 7000 + Math.random() * 5000;
-      if (state.moments !== 'none' && Math.random() < 0.6) {
-        const m = config.moments.find((x) => x.id === state.moments);
-        setTimeout(() => {
-          if (!live.playing || !m || !m.variants) return;
-          const el = new Audio(`/moments/${m.id}-${1 + Math.floor(Math.random() * m.variants)}.mp3`);
-          el.volume = Math.min(1, 0.35 + 0.5 * curve(state.bgLevel));
-          el.play().catch(() => {});
-        }, gap * 0.3);
-      }
-      live.timer = setTimeout(playNextVoice, gap);
-    };
-  }
-  function startLive() {
-    stopAudition();
-    ensureCtx();
-    syncBeds();
-    live.playing = true;
-    for (const b of live.beds.values()) startBed(b);
-    live.timer = setTimeout(playNextVoice, live.beds.size ? 1800 : 200);
-    renderLivebar();
-  }
-  function stopLive() {
-    live.playing = false;
-    clearTimeout(live.timer);
-    if (live.voiceSrc) { try { live.voiceSrc.stop(); } catch {} live.voiceSrc = null; }
-    for (const b of live.beds.values()) { b.el.pause(); if (live.ctx) b.gain.gain.value = 0; }
-    duck(false);
-    renderLivebar();
-  }
-  // Called after anything changes. Starts listening when there is something to
-  // hear and the change came from a tap, so it feels live.
-  function mixChanged(fromTap) {
-    syncBedsIfReady();
-    if (fromTap && !live.playing && (readyClips().length || layerCount())) startLive();
-    renderLivebar();
-  }
-  function syncBedsIfReady() { if (live.ctx) syncBeds(); }
-
-  function renderLivebar(speaking) {
-    const bar = $('#livebar');
-    const has = readyClips().length || layerCount();
-    bar.hidden = !has || !$('#result').hidden;
-    $('#livePlay').textContent = live.playing ? '❚❚' : '▶';
-    $('#livePlay').setAttribute('aria-label', live.playing ? 'Pause your mix' : 'Listen to your mix');
-    const parts = [];
-    if (readyClips().length) parts.push(`${readyClips().length} recording${readyClips().length > 1 ? 's' : ''}`);
-    state.ambience.forEach((id) => parts.push(themeById(id).name));
-    if (state.music) parts.push(themeById(state.music).name);
-    $('#liveTitle').textContent = live.playing ? (speaking ? `Playing: ${speaking}` : 'Listening to your mix') : 'Listen to your mix';
-    $('#liveSummary').textContent = parts.join(' + ');
-  }
-  $('#livePlay').addEventListener('click', () => (live.playing ? stopLive() : startLive()));
-
   // ---------- single-sound audition (the ▶ on each card) ----------
   let audition = null;
   function stopAudition() {
@@ -169,7 +25,6 @@
     const same = audition && audition.btn === btn;
     stopAudition();
     if (same) return;
-    if (live.playing) stopLive();
     stopClipPreview();
     const el = new Audio(src);
     el.loop = loop;
@@ -210,7 +65,6 @@
         state.musicLevel = c.musicLevel;
         stopAudition();
         renderAll();
-        mixChanged(true);
         showError('');
         $('#create').scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
@@ -225,7 +79,6 @@
     comboAudio.forEach((a) => a.pause());
     comboAudio = [];
     if (same) return;
-    if (live.playing) stopLive();
     stopClipPreview();
     const n = c.ambience.length + 1;
     const mk = (id, level) => { const a = new Audio(`/beds/${id}.mp3`); a.loop = true; a.volume = Math.min(1, curve(level) / Math.sqrt(n) * 1.2); a.play().catch(() => {}); return a; };
@@ -267,7 +120,7 @@
   function renderBackground() {
     const max = tier().maxLayers;
     const hint = $('#bgHint');
-    hint.innerHTML = 'Tap to add a sound. If your recordings are added, you\'ll hear it with them straight away. ';
+    hint.innerHTML = 'Tap to add a sound. Press ▶ on a card to hear it. ';
     if (!state.plus) {
       const up = document.createElement('button');
       up.type = 'button'; up.className = 'upsell'; up.textContent = 'Use 3 sounds with Plus';
@@ -284,7 +137,6 @@
         else state.ambience.push(t.id);
         showError('');
         renderBackground();
-        mixChanged(true);
       }));
     });
   }
@@ -300,7 +152,6 @@
         else state.music = t.id;
         showError('');
         renderMusic();
-        mixChanged(true);
       }));
     });
   }
@@ -318,12 +169,8 @@
       const def = key === 'voiceLevel' ? 1 : 0.5;
       b.innerHTML = `${v * 100}%${v === def ? '<span class="lock">default</span>' : v === 0.25 ? '<span class="lock">very soft</span>' : ''}`;
       b.addEventListener('click', () => {
-        const old = state[key];
         state[key] = v;
-        applyLevels();
-        if (key === 'voiceLevel' && live.ctx && live.voiceSrc) live.voice.gain.setTargetAtTime(live.voice.gain.value * curve(v) / curve(old), live.ctx.currentTime, 0.08);
         renderLevel(el, key);
-        mixChanged(true);
       });
       wrap.appendChild(b);
     });
@@ -420,7 +267,6 @@
         if (c.url) URL.revokeObjectURL(c.url);
         state.clips.splice(i, 1);
         renderClips();
-        renderLivebar();
       });
       if (c.status === 'working') {
         li.insertAdjacentHTML('beforeend', `<span class="busy">${c.isVideo ? 'Taking the sound from your video…' : 'Reading the recording…'}</span>`);
@@ -439,7 +285,6 @@
         pb.addEventListener('click', () => {
           if (clipPreview && clipPreview.btn === pb) return stopClipPreview();
           stopClipPreview(); stopAudition();
-          if (live.playing) stopLive();
           const audio = new Audio(c.url);
           clipPreview = { audio, btn: pb };
           pb.textContent = '■ Stop';
@@ -456,7 +301,7 @@
   }
 
   // Decode in the browser where we can: it lets us play the recording in the
-  // live mix, and for videos we only upload the few seconds of sound needed.
+  // recording in the browser, and for videos we only upload the few seconds of sound needed.
   let decodeCtx;
   async function decodeToMono(file) {
     decodeCtx = decodeCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -473,7 +318,7 @@
     src.connect(off.destination);
     src.start();
     const rendered = await off.startRendering();
-    return { pcm: rendered.getChannelData(0), rate, buffer: rendered };
+    return { pcm: rendered.getChannelData(0), rate };
   }
   function wavBlob(pcm, rate, from = 0, to = pcm.length / rate) {
     const a = Math.floor(from * rate);
@@ -497,21 +342,13 @@
       a.src = url;
     });
   }
-  // even out quiet and loud recordings in the live mix, like the final mix does
-  function loudnessGain(pcm) {
-    let sum = 0, n = 0;
-    for (let i = 0; i < pcm.length; i += 7) { const v = pcm[i]; if (Math.abs(v) > 0.01) { sum += v * v; n++; } }
-    const rms = Math.sqrt(sum / Math.max(1, n)) || 0.1;
-    return Math.max(0.3, Math.min(6, 0.12 / rms));
-  }
 
   async function prepareClip(c) {
     try {
       if (c.file.size > 600 * 1024 * 1024) throw new Error('too big');
-      const { pcm, rate, buffer } = await decodeToMono(c.file);
-      c.pcm = pcm; c.rate = rate; c.buffer = buffer;
+      const { pcm, rate } = await decodeToMono(c.file);
+      c.pcm = pcm; c.rate = rate;
       c.duration = pcm.length / rate;
-      c.previewGain = loudnessGain(pcm);
       c.url = URL.createObjectURL(wavBlob(pcm, rate, 0, Math.min(c.duration, 600)));
     } catch {
       // Fall back to uploading the original file; the server pulls out the sound.
@@ -522,13 +359,12 @@
       }
       if (!c.url) c.url = URL.createObjectURL(c.file);
       c.duration = c.duration || (await mediaDuration(c.url)) || 30;
-      c.note = 'This one won\'t play in the live mix, but it will be in your soundscape.';
+      
     }
     c.from = 0;
     c.to = Math.min(c.duration, config.maxClipSeconds);
     c.status = 'ready';
     renderClips();
-    renderLivebar();
   }
 
   function addFiles(files) {
@@ -560,7 +396,6 @@
     if (recorder) { recorder.stop(); return; }
     if (!navigator.mediaDevices || !window.MediaRecorder) { status.textContent = 'Recording isn\'t supported in this browser. Upload a file instead.'; return; }
     try {
-      if (live.playing) stopLive();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true } });
       const chunks = [];
       recorder = new MediaRecorder(stream);
@@ -612,7 +447,6 @@
     if (state.minutes > tier().maxMinutes) state.minutes = tier().maxMinutes;
     while (state.clips.length > tier().maxClips) { const c = state.clips.pop(); if (c.url) URL.revokeObjectURL(c.url); }
     renderAll();
-    syncBedsIfReady();
   }
 
   function renderAll() {
@@ -625,7 +459,6 @@
     renderMusic();
     renderLevel('#musicLevel', 'musicLevel');
     renderLengths();
-    renderLivebar();
   }
 
   // ---------- submit ----------
@@ -665,7 +498,7 @@
     });
     fd.append('clipInfo', JSON.stringify(info));
 
-    stopLive(); stopAudition(); stopClipPreview();
+    stopAudition(); stopClipPreview();
     $('#working').hidden = false;
     $('#submitBtn').disabled = true;
     try {
@@ -753,7 +586,6 @@
     $('#create').hidden = true;
     $('#combos').hidden = true;
     $('#result').hidden = false;
-    renderLivebar();
     const theme = themeById(d.theme);
     $('#resultCard').style.borderTop = `8px solid ${theme.colors[0]}`;
     $('#resultTitle').textContent = d.title;
@@ -774,6 +606,15 @@
     setTimeout(() => ($('#copyBtn').textContent = 'Copy'), 1500);
   });
 
+  // back to the form with everything kept, to adjust and make it again
+  $('#tweakBtn').addEventListener('click', () => {
+    $('#resultAudio').pause();
+    $('#result').hidden = true;
+    $('#create').hidden = false;
+    $('#combos').hidden = false;
+    $('#create').scrollIntoView({ behavior: 'smooth' });
+  });
+
   $('#againBtn').addEventListener('click', () => {
     $('#resultAudio').pause();
     $('#result').hidden = true;
@@ -783,7 +624,6 @@
     state.clips = [];
     $('#title').value = '';
     renderClips();
-    renderLivebar();
     $('#create').scrollIntoView({ behavior: 'smooth' });
   });
 
