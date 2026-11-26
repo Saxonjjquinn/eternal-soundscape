@@ -87,6 +87,7 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
     if (layers.length > tier.maxLayers) throw new Error(`You can layer up to ${tier.maxLayers} sounds${tierName === 'free' ? ' on the free plan' : ''}.`);
     const locked = layers.find((l) => !l.theme.free && tierName !== 'plus');
     if (locked) throw new Error(`${locked.theme.name} is a Plus sound.`);
+    const voiceLevel = [0.25, 0.5, 0.75, 1].includes(Number(req.body.voiceLevel)) ? Number(req.body.voiceLevel) : 1;
     const bedLevel = [0.25, 0.5, 0.75, 1].includes(Number(req.body.bedLevel)) ? Number(req.body.bedLevel) : 0.5;
     const moment = MOMENTS.find((m) => m.id === (req.body.moments || 'none')) || MOMENTS[0];
 
@@ -116,6 +117,7 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
         output: path.join(dir, 'soundscape.mp3'),
         workDir,
         bedLevel,
+        voiceLevel,
         seed: crypto.createHash('sha1').update(id).digest().readUInt32LE(0),
         title,
       }));

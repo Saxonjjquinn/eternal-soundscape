@@ -187,7 +187,7 @@ async function renderTrack(items, total, output, extra = () => '') {
  * @param {number} [o.seed]
  * @param {string} [o.title]
  */
-async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1, title, bedLevel = 0.5 }) {
+async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1, title, bedLevel = 0.5, voiceLevel = 1 }) {
   // bedLevel (0.25–1) sets how loud the background sounds and moments sit under the voices
   // mapped on a curve so each step is clearly audible (0.25→0.16, 0.5→0.38, 0.75→0.63, 1→0.9)
   const level = Math.pow(Math.max(0.1, Math.min(1, Number(bedLevel) || 0.5)), 1.25) * 0.9;
@@ -250,7 +250,9 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
   const bedLabels = layers.map((_, k) => `[b${k}]`).join('');
   f.push(layers.length > 1 ? `${bedLabels}amix=inputs=${layers.length}:normalize=0:duration=first[bed]` : `[b0]anull[bed]`);
   f.push(`[bed][${vIn}:a]sidechaincompress=threshold=0.015:ratio=4:attack=150:release=1800[ducked]`);
-  const finalInputs = `[ducked][${vIn + 1}:a]${momentsWav ? `[${vIn + 2}:a]` : ''}`;
+  const vGain = Math.pow(Math.max(0.25, Math.min(1, Number(voiceLevel) || 1)), 1.25);
+  f.push(`[${vIn + 1}:a]volume=${vGain.toFixed(3)}[vox]`);
+  const finalInputs = `[ducked][vox]${momentsWav ? `[${vIn + 2}:a]` : ''}`;
   f.push(
     `${finalInputs}amix=inputs=${momentsWav ? 3 : 2}:normalize=0:duration=first,` +
       `afade=t=in:d=4,afade=t=out:st=${seconds - 6}:d=6[out]`

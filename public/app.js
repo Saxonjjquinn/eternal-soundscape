@@ -9,7 +9,7 @@
   const curve = (level) => Math.pow(level, 1.25); // so each volume step is clearly audible
 
   let config;
-  const state = { ambience: [], music: null, bgLevel: 0.5, musicLevel: 0.5, moments: 'none', minutes: 2, clips: [], plus: false };
+  const state = { ambience: [], music: null, bgLevel: 0.5, musicLevel: 0.5, voiceLevel: 1, moments: 'none', minutes: 2, clips: [], plus: false };
   try { state.plus = localStorage.getItem('le-plus') === '1'; } catch {}
   const tier = () => config.tiers[state.plus ? 'plus' : 'free'];
   const themeById = (id) => config.themes.find((t) => t.id === id);
@@ -95,7 +95,7 @@
     src.connect(live.voice);
     // the first time round each recording plays clearly; after that it comes back softer
     const echo = live.clipIdx > clips.length;
-    live.voice.gain.value = (c.previewGain || 1) * (echo ? 0.5 : 1);
+    live.voice.gain.value = (c.previewGain || 1) * (echo ? 0.5 : 1) * curve(state.voiceLevel);
     const dur = Math.max(0.3, c.to - c.from);
     src.start(0, c.from, dur);
     live.voiceSrc = src;
@@ -315,10 +315,13 @@
       b.className = 'len';
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', String(state[key] === v));
-      b.innerHTML = `${v * 100}%${v === 0.5 ? '<span class="lock">default</span>' : v === 0.25 ? '<span class="lock">very soft</span>' : ''}`;
+      const def = key === 'voiceLevel' ? 1 : 0.5;
+      b.innerHTML = `${v * 100}%${v === def ? '<span class="lock">default</span>' : v === 0.25 ? '<span class="lock">very soft</span>' : ''}`;
       b.addEventListener('click', () => {
+        const old = state[key];
         state[key] = v;
         applyLevels();
+        if (key === 'voiceLevel' && live.ctx && live.voiceSrc) live.voice.gain.setTargetAtTime(live.voice.gain.value * curve(v) / curve(old), live.ctx.currentTime, 0.08);
         renderLevel(el, key);
         mixChanged(true);
       });
@@ -617,6 +620,7 @@
     renderClips();
     renderBackground();
     renderMoments();
+    renderLevel('#voiceLevel', 'voiceLevel');
     renderLevel('#bgLevel', 'bgLevel');
     renderMusic();
     renderLevel('#musicLevel', 'musicLevel');
@@ -642,6 +646,7 @@
     const fd = new FormData();
     fd.append('layers', JSON.stringify(layers));
     fd.append('bedLevel', '1'); // volumes are already in each layer
+    fd.append('voiceLevel', String(state.voiceLevel));
     fd.append('moments', state.moments);
     fd.append('minutes', String(state.minutes));
     fd.append('title', $('#title').value.trim());
