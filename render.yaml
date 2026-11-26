@@ -1,0 +1,16 @@
+# One-click setup on Render (render.com): New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: little-echoes
+    runtime: node
+    plan: starter            # free plan works too, but it has no disk, so share links vanish on restart
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/config
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: soundscapes
+      mountPath: /var/data
+      sizeGB: 1

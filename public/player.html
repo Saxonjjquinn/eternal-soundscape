@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{TITLE}} · Little Echoes</title>
+  <meta name="description" content="A {{THEME_NAME}} soundscape made with Little Echoes. Press play and let it fill the room.">
+  <meta property="og:title" content="{{TITLE}}">
+  <meta property="og:description" content="A {{THEME_NAME}} soundscape made with Little Echoes. Tap to listen.">
+  <meta name="theme-color" content="{{C1}}">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Nunito:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --c1: {{C1}}; --c2: {{C2}}; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; color: #fff; font: 17px/1.5 Nunito, system-ui, sans-serif;
+      background: #1b1724 linear-gradient(160deg, var(--c1), #1b1724 85%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+      text-align: center; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+    }
+    .eyebrow { opacity: .75; letter-spacing: .1em; text-transform: uppercase; font-size: .8rem; font-weight: 700; margin: 0 0 8px; }
+    h1 { font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: clamp(1.8rem, 6vw, 3rem); margin: 0 0 36px; line-height: 1.15; max-width: 18em; }
+    .orb-wrap { position: relative; width: min(62vw, 300px); aspect-ratio: 1; margin-bottom: 28px; }
+    .orb {
+      position: absolute; inset: 0; border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, var(--c2), var(--c1) 70%);
+      transition: transform 1s ease;
+    }
+    .orb-wrap::before {
+      content: ''; position: absolute; inset: -22%; border-radius: 50%;
+      background: radial-gradient(circle, color-mix(in srgb, var(--c2) 40%, transparent) 40%, transparent 70%);
+    }
+    .playing .orb { animation: breathe 7s ease-in-out infinite; }
+    @keyframes breathe { 0%, 100% { transform: scale(.94); } 50% { transform: scale(1.04); } }
+    @media (prefers-reduced-motion: reduce) { .playing .orb { animation: none; } }
+    .big-play {
+      position: absolute; inset: 0; margin: auto; width: 42%; height: 42%; border-radius: 50%; border: none; cursor: pointer;
+      background: rgba(255,255,255,.95); color: #1b1724; display: grid; place-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+    }
+    .big-play svg { width: 42%; height: 42%; }
+    .big-play:focus-visible, .ctl:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+    .time { font-variant-numeric: tabular-nums; opacity: .8; margin-bottom: 8px; }
+    .bar { width: min(90vw, 420px); height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; margin-bottom: 26px; }
+    .bar span { display: block; height: 100%; width: 0; background: #fff; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    .ctl {
+      min-height: 46px; padding: 0 18px; border-radius: 999px; border: 1px solid rgba(255,255,255,.35); background: rgba(255,255,255,.08);
+      color: #fff; font: inherit; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    }
+    .ctl[aria-pressed="true"] { background: #fff; color: #1b1724; }
+    .vol { display: inline-flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.35); }
+    .vol input { width: 110px; accent-color: #fff; }
+    footer { margin-top: 36px; opacity: .65; font-size: .85rem; }
+    footer a { color: inherit; }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">{{THEME_NAME}}</p>
+  <h1>{{TITLE}}</h1>
+
+  <div class="orb-wrap" id="wrap">
+    <div class="orb"></div>
+    <button class="big-play" id="play" aria-label="Play">
+      <svg viewBox="0 0 24 24" fill="currentColor" id="icon"><path d="M7 4.5v15l13-7.5z"/></svg>
+    </button>
+  </div>
+
+  <div class="time" id="time">0:00</div>
+  <div class="bar"><span id="progress"></span></div>
+
+  <div class="controls">
+    <button class="ctl" id="loop" aria-pressed="true">↻ Loop</button>
+    <label class="vol">Volume <input type="range" id="vol" min="0" max="1" step="0.05" value="0.8" aria-label="Volume"></label>
+    <a class="ctl" id="download" href="#">⤓ Download</a>
+  </div>
+
+  <footer>Made with <a href="/">Little Echoes</a></footer>
+
+  <audio id="audio" preload="auto"></audio>
+  <script id="data" type="application/json">{{DATA}}</script>
+  <script>
+    (() => {
+      const raw = document.getElementById('data').textContent;
+      const txt = document.createElement('textarea');
+      txt.innerHTML = raw; // undo the HTML escaping
+      const d = JSON.parse(txt.value);
+      const audio = document.getElementById('audio');
+      const play = document.getElementById('play');
+      const icon = document.getElementById('icon');
+      const loopBtn = document.getElementById('loop');
+      const vol = document.getElementById('vol');
+      const PLAY = '<path d="M7 4.5v15l13-7.5z"/>';
+      const PAUSE = '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>';
+      let wakeLock = null;
+
+      audio.src = d.audioUrl;
+      audio.loop = true;
+      document.getElementById('download').href = d.downloadUrl;
+      try { const v = localStorage.getItem('le-vol'); if (v !== null) vol.value = v; } catch {}
+      audio.volume = Number(vol.value);
+
+      const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+      async function keepAwake(on) {
+        try {
+          if (on && 'wakeLock' in navigator && !wakeLock) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => (wakeLock = null));
+          } else if (!on && wakeLock) { await wakeLock.release(); }
+        } catch {}
+      }
+      function sync() {
+        const on = !audio.paused;
+        icon.innerHTML = on ? PAUSE : PLAY;
+        play.setAttribute('aria-label', on ? 'Pause' : 'Play');
+        document.body.classList.toggle('playing', on);
+        keepAwake(on);
+      }
+      play.addEventListener('click', () => (audio.paused ? audio.play() : audio.pause()));
+      audio.addEventListener('play', sync);
+      audio.addEventListener('pause', sync);
+      audio.addEventListener('timeupdate', () => {
+        document.getElementById('time').textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration || d.minutes * 60)}`;
+        document.getElementById('progress').style.width = `${(audio.currentTime / (audio.duration || 1)) * 100}%`;
+      });
+      loopBtn.addEventListener('click', () => {
+        audio.loop = !audio.loop;
+        loopBtn.setAttribute('aria-pressed', String(audio.loop));
+      });
+      vol.addEventListener('input', () => {
+        audio.volume = Number(vol.value);
+        try { localStorage.setItem('le-vol', vol.value); } catch {}
+      });
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && !audio.paused) keepAwake(true); });
+      document.addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); play.click(); } });
+
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: d.title, artist: 'Little Echoes', album: d.themeName });
+        navigator.mediaSession.setActionHandler('play', () => audio.play());
+        navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+      }
+      document.getElementById('time').textContent = `0:00 / ${fmt(d.minutes * 60)}`;
+    })();
+  </script>
+</body>
+</html>
