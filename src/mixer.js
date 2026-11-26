@@ -2,9 +2,10 @@
 //
 // Pass 1 (per clip): decode any audio/video format, cut to the chosen part,
 //   trim silence at the ends, clean up rumble and hiss, even out loudness.
-// Plan: lay voices out on a timeline with natural, uneven gaps, cycling
-//   through every recording before any repeats, never the same clip twice in
-//   a row, each placed slightly left or right at a slightly different level.
+// Plan: lay voices out on a timeline with natural, uneven gaps. Each recording
+//   is heard clearly once; longer soundscapes bring them back as softer, more
+//   distant echoes (cycling through all before any repeats, never the same clip
+//   twice in a row), each placed slightly left or right.
 //   Small "moments" (chimes, music-box phrases) go in some of the quiet gaps.
 // Pass 2a: render the voice track and the moments track.
 // Pass 2b: loop up to three ambient layers, bring them in one at a time,
@@ -82,53 +83,58 @@ function schedule(durations, total, { seed = 1, momentVariants = 0, momentDur = 
   const tail = 8;
   const n = durations.length;
 
-  // Natural gaps: mostly 10–20 s, occasionally a longer rest. Shrink them if
-  // there isn't room to play every recording at least once.
-  let gapMin = 10;
-  let gapMax = 20;
-  let allowLongRest = true;
+  // How the soundscape is arranged depends on its length. Each recording is
+  // heard clearly once; in longer soundscapes they come back now and then as
+  // softer, more distant echoes, with longer quiet stretches in between.
   const room = total - head - tail;
-  const once = durations.reduce((a, b) => a + b, 0);
-  const avg = (room - once) / Math.max(1, n - 1); // average gap that still fits everyone in once
-  if (n > 1 && avg < 24) {
-    gapMin = Math.max(3, avg * 0.7);
-    gapMax = Math.max(3.5, avg * 0.95);
-    allowLongRest = false;
-  }
+  const avgDur = durations.reduce((a, b) => a + b, 0) / Math.max(1, n);
+  const repeatsPerClip = Math.max(0, Math.floor((total - 90) / 75)); // 1–2 min: none, 3 min: 1, 5 min: 2, 10 min: 6, 15 min: 10
+  const target = Math.round((room * 0.3) / Math.max(1, avgDur)); // voices fill roughly a third of the time
+  let count = Math.max(n, Math.min(target, n * (1 + repeatsPerClip)));
 
   // Shuffle-bag order: every clip once before any repeats, no back-to-back repeats.
-  const order = [];
   let last = -1;
   const nextBag = () => {
     const bag = [...Array(n).keys()];
     for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
     if (n > 1 && bag[0] === last) [bag[0], bag[1]] = [bag[1], bag[0]];
+    last = bag[bag.length - 1];
     return bag;
   };
+  let seq = [];
+  while (seq.length < count) seq.push(...nextBag());
+  seq = seq.slice(0, count);
+  const minGap = 3;
+  const fits = (s) => s.reduce((a, c) => a + durations[c], 0) + minGap * (s.length - 1) <= room;
+  while (seq.length > 1 && !fits(seq)) seq.pop(); // drop repeats first, then whatever won't fit
 
   const voices = [];
   const gaps = [];
-  let t = head;
-  let side = r() < 0.5 ? -1 : 1;
-  for (let guard = 0; guard < 500; guard++) {
-    if (!order.length) order.push(...nextBag());
-    const clip = order.shift();
-    const dur = durations[clip];
-    if (t + dur > total - tail) {
-      if (!voices.length) voices.push({ clip, start: Math.max(1, total - tail - dur), dur: Math.min(dur, total - tail - 1), pan: 0, gain: 1 });
-      break;
-    }
-    side = -side; // alternate sides so it feels like the room, not one speaker
-    voices.push({ clip, start: t, dur, pan: +(side * between(r, 0.08, 0.32)).toFixed(2), gain: +between(r, 0.82, 1).toFixed(2) });
-    last = clip;
-    const longRest = allowLongRest && r() < 0.2;
-    const gap = longRest ? between(r, gapMax, gapMax * 1.5) : between(r, gapMin, gapMax);
-    gaps.push([t + dur, t + dur + gap]);
-    t += dur + gap;
+  if (!fits(seq)) {
+    const dur = Math.min(durations[seq[0]], total - tail - 2);
+    voices.push({ clip: seq[0], start: Math.max(1, total - tail - dur), dur, pan: 0, gain: 1 });
+  } else {
+    // Spread the spare time over the gaps unevenly, with the odd long rest.
+    // The stretch after the last voice counts as a gap too, so it doesn't end on a voice.
+    const spare = room - seq.reduce((a, c) => a + durations[c], 0) - minGap * (seq.length - 1);
+    const weights = seq.map((_, i) => (i === seq.length - 1 ? 0.6 : (seq.length > 3 && r() < 0.2 ? between(r, 1.8, 2.6) : between(r, 0.6, 1.4))));
+    const wsum = weights.reduce((a, b) => a + b, 0);
+    const seen = new Set();
+    let t = head;
+    let side = r() < 0.5 ? -1 : 1;
+    seq.forEach((clip, i) => {
+      const dur = durations[clip];
+      side = -side; // alternate sides so it feels like the room, not one speaker
+      const echo = seen.has(clip);
+      seen.add(clip);
+      voices.push(echo
+        ? { clip, start: t, dur, echo: true, pan: +(side * between(r, 0.3, 0.6)).toFixed(2), gain: +between(r, 0.42, 0.62).toFixed(2) }
+        : { clip, start: t, dur, pan: +(side * between(r, 0.08, 0.32)).toFixed(2), gain: +between(r, 0.85, 1).toFixed(2) });
+      const gap = (i === seq.length - 1 ? 0 : minGap) + (spare * weights[i]) / wsum;
+      gaps.push([t + dur, i === seq.length - 1 ? total - tail : t + dur + gap]);
+      t += dur + gap;
+    });
   }
-  // the stretch after the last voice runs to the end
-  const lv = voices[voices.length - 1];
-  if (gaps.length) gaps[gaps.length - 1] = [lv.start + lv.dur, total - tail];
 
   const moments = [];
   if (momentVariants > 0) {
@@ -203,7 +209,8 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
     plan.voices.map((v) => ({ ...v, file: prepared[v.clip] })),
     seconds,
     voicesWav,
-    (v) => `atrim=0:${v.dur.toFixed(2)},afade=t=in:d=0.25,afade=t=out:st=${Math.max(0, v.dur - 0.6).toFixed(2)}:d=0.6,aecho=0.85:0.5:45|95:0.18|0.1,`
+    (v) => `atrim=0:${v.dur.toFixed(2)},afade=t=in:d=${v.echo ? 1.2 : 0.25},afade=t=out:st=${Math.max(0, v.dur - (v.echo ? 1.5 : 0.6)).toFixed(2)}:d=${v.echo ? 1.5 : 0.6},` +
+      (v.echo ? 'lowpass=f=2800,aecho=0.8:0.6:60|140|260:0.3|0.2|0.12,' : 'aecho=0.85:0.5:45|95:0.18|0.1,')
   );
   let momentsWav = null;
   if (plan.moments.length) {
@@ -265,7 +272,7 @@ async function mix({ layers, clips, moments, seconds, output, workDir, seed = 1,
   return {
     total: seconds,
     layers: layerInfo,
-    voices: plan.voices.map((v) => ({ clip: v.clip, name: clips[v.clip].name || `Clip ${v.clip + 1}`, start: +v.start.toFixed(2), dur: +v.dur.toFixed(2), pan: v.pan })),
+    voices: plan.voices.map((v) => ({ clip: v.clip, name: clips[v.clip].name || `Clip ${v.clip + 1}`, start: +v.start.toFixed(2), dur: +v.dur.toFixed(2), pan: v.pan, echo: !!v.echo })),
     moments: plan.moments.map((m) => ({ start: m.start, dur: m.dur })),
   };
 }

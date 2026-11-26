@@ -93,7 +93,9 @@
     const src = live.ctx.createBufferSource();
     src.buffer = c.buffer;
     src.connect(live.voice);
-    live.voice.gain.value = c.previewGain || 1;
+    // the first time round each recording plays clearly; after that it comes back softer
+    const echo = live.clipIdx > clips.length;
+    live.voice.gain.value = (c.previewGain || 1) * (echo ? 0.5 : 1);
     const dur = Math.max(0.3, c.to - c.from);
     src.start(0, c.from, dur);
     live.voiceSrc = src;
@@ -103,8 +105,8 @@
       if (live.voiceSrc !== src) return;
       duck(false);
       renderLivebar();
-      // a short pause before the next voice (shorter than the real mix so you hear more)
-      const gap = 3500 + Math.random() * 3000;
+      // a pause before the next voice (shorter than the real mix so you hear more)
+      const gap = 7000 + Math.random() * 5000;
       if (state.moments !== 'none' && Math.random() < 0.6) {
         const m = config.moments.find((x) => x.id === state.moments);
         setTimeout(() => {
@@ -377,21 +379,21 @@
     if (state.clips.length > 1 && used > room) {
       hint.innerHTML = '<span class="warn">Your recordings add up to more than fits in this length, so some may be left out. Choose a longer duration or shorten a recording.</span>';
     } else {
-      hint.textContent = 'Players can loop it, so even a short soundscape can play all afternoon.';
+      hint.textContent = state.minutes >= 5 ? 'Each recording plays clearly once, then comes back now and then as a softer echo, with long quiet stretches between.' : state.minutes >= 3 ? 'Each recording plays clearly once, and may come back once as a softer echo.' : 'Each recording plays once, with quiet music in between. Players can loop it.';
     }
   }
 
   // ---------- recordings ----------
   let clipPreview = null;
   function stopClipPreview() {
-    if (clipPreview) { clipPreview.audio.pause(); clipPreview.btn.textContent = '▶ Play this part'; clipPreview = null; }
+    if (clipPreview) { clipPreview.audio.pause(); clipPreview.btn.textContent = '▶ Play'; clipPreview = null; }
   }
 
   function renderClips() {
     const max = tier().maxClips;
     const full = state.clips.length >= max;
     const hint = $('#clipHint');
-    hint.innerHTML = `Add up to ${max} recordings: giggles, chatter, a song, "hi Nana!". We use up to ${config.maxClipSeconds} seconds from each one, and you choose which part. `;
+    hint.innerHTML = `Add up to ${max} recordings: giggles, chatter, a song, "hi Nana!". We use up to ${config.maxClipSeconds} seconds from each one. `;
     if (!state.plus) {
       const up = document.createElement('button');
       up.type = 'button'; up.className = 'upsell'; up.textContent = 'Want more recordings? Unlock Plus';
@@ -425,32 +427,11 @@
         meta.textContent = `${c.isVideo ? 'Sound from video · ' : ''}${fmt(c.duration)} long`;
         li.appendChild(meta);
         let partLabel;
-        if (c.duration > 3) {
-          const trim = document.createElement('div');
-          trim.className = 'trim';
-          trim.innerHTML = `<span>Start</span><input type="range" step="0.5" min="0" max="${c.duration.toFixed(1)}" value="${c.from}" aria-label="Start of the part to use"><output>${fmt(c.from)}</output>
-            <span>End</span><input type="range" step="0.5" min="0" max="${c.duration.toFixed(1)}" value="${c.to}" aria-label="End of the part to use"><output>${fmt(c.to)}</output>`;
-          const [s, e] = trim.querySelectorAll('input');
-          const [so, eo] = trim.querySelectorAll('output');
-          const limit = config.maxClipSeconds;
-          const sync = (moved) => {
-            let a = Number(s.value), b = Number(e.value);
-            if (b - a < 1) { if (moved === s) a = Math.max(0, b - 1); else b = Math.min(c.duration, a + 1); }
-            if (b - a > limit) { if (moved === s) b = a + limit; else a = b - limit; }
-            c.from = a; c.to = b; s.value = a; e.value = b;
-            so.textContent = fmt(a); eo.textContent = fmt(b);
-            partLabel.textContent = `Using ${fmt(b - a)}`;
-            renderLengthHint();
-          };
-          s.addEventListener('input', () => sync(s));
-          e.addEventListener('input', () => sync(e));
-          li.appendChild(trim);
-        }
         const part = document.createElement('div');
         part.className = 'part';
-        part.innerHTML = '<button type="button" class="btn ghost">▶ Play this part</button><span class="muted small"></span>';
+        part.innerHTML = '<button type="button" class="btn ghost">▶ Play</button><span class="muted small"></span>';
         partLabel = part.querySelector('span');
-        partLabel.textContent = `Using ${fmt(c.to - c.from)}`;
+        partLabel.textContent = c.duration > config.maxClipSeconds ? `We'll use the first ${config.maxClipSeconds} seconds` : '';
         const pb = part.querySelector('button');
         pb.addEventListener('click', () => {
           if (clipPreview && clipPreview.btn === pb) return stopClipPreview();
@@ -721,7 +702,8 @@
         b.style.left = pct(v.start);
         b.style.width = pct(v.dur);
         b.style.background = CLIP_COLORS[ci % CLIP_COLORS.length];
-        b.title = `${v.name} at ${fmt(v.start)}`;
+        if (v.echo) b.style.opacity = '0.45';
+        b.title = `${v.name} at ${fmt(v.start)}${v.echo ? ' (soft echo)' : ''}`;
         track.appendChild(b);
       }));
     });
