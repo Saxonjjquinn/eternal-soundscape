@@ -133,8 +133,8 @@ function epiano(m, dur = 1, vel = 1) {
   const f = mtof(m);
   return render(dur + 0.6, (t) => {
     const e = env(t, 0.004, 1.1, dur, 0.12) * vel;
-    const idx = 0.25 + 1.1 * Math.exp(-t * 6) * vel;
-    return e * (Math.sin(TAU * f * t + idx * Math.sin(TAU * f * t)) + 0.06 * Math.sin(TAU * f * 4.01 * t) * Math.exp(-t * 9));
+    const idx = 0.45 + 1.5 * Math.exp(-t * 4) * vel;
+    return e * (Math.sin(TAU * f * t + idx * Math.sin(TAU * f * t)) + 0.14 * Math.sin(TAU * f * 4.01 * t) * Math.exp(-t * 5) + 0.05 * Math.sin(TAU * f * 7.02 * t) * Math.exp(-t * 8));
   });
 }
 
@@ -235,6 +235,21 @@ function vinyl(track, R, crackle = 0.6, hiss = 0.004) {
 }
 
 // ---------- helpers for writing music ----------
+// Shaped after Saxon's reference edits: no real beat, a warm sustained bed
+// carrying the harmony, slow swells (about every 6 s), very little above 2 kHz.
+function padBed(track, chords, barLen, gain = 0.07, lp = 1000) {
+  const bed = new Track(track.N / SR);
+  chords.forEach((v, k) => v.forEach((m, i) => bed.put(pad(m, barLen + 0.3, 0.8, 3), k * barLen, gain, 0.25 + i * 0.17)));
+  lowpassTrack(bed, lp);
+  return track.mix(bed);
+}
+function finishMusic(track, swellPeriod, lp = 5000) {
+  for (let i = 0; i < track.N; i++) {
+    const g = 0.78 + 0.22 * Math.sin((TAU * i) / (SR * swellPeriod));
+    track.L[i] *= g; track.R[i] *= g;
+  }
+  return lowpassTrack(track, lp);
+}
 const human = (R, amt = 0.012) => (R() - 0.5) * amt;
 function chordAt(prog, bar) { return prog[bar % prog.length]; }
 
@@ -256,18 +271,18 @@ const pieces = {
       const c = chordAt(prog, k);
       const t0 = k * bar;
       const quiet = k >= 24 && k < 28; // pulse drops out for a moment
-      if (k % 2 === 0) c.v.forEach((m, i) => keys.put(epiano(m, bar * 1.6, 0.4), t0 + human(R) + i * 0.012, 0.14, 0.35 + i * 0.1));
+      if (k % 2 === 0) c.v.forEach((m, i) => keys.put(epiano(m, bar * 1.6, 0.4), t0 + human(R) + i * 0.012, 0.26, 0.35 + i * 0.1));
       else if (R() < 0.5) keys.put(epiano(c.v[3] + 12, beat, 0.25), t0 + 2.5 * beat, 0.07, 0.65); // a single soft answer note
-      T.put(bass(c.b, bar * 0.8, 0.7), t0 + human(R, 0.006), 0.3, 0.5);
+      T.put(bass(c.b, bar * 0.8, 0.7), t0 + human(R, 0.006), 0.2, 0.5);
       if (!quiet) {
-        for (let b = 0; b < 4; b++) T.put(kick(R, 0.7), t0 + b * beat, 0.16, 0.5);
-        for (let b = 0; b < 4; b++) T.put(hat(R, 0.6), t0 + (b + 0.5) * beat + human(R, 0.008), 0.03, 0.62);
+        for (let b = 0; b < 4; b++) T.put(kick(R, 0.6), t0 + b * beat, 0.08, 0.5); // a pulse you feel more than hear
       }
     }
-    lowpassTrack(keys, 2400);
+    lowpassTrack(keys, 4200);
     T.mix(reverb(keys, 0.35));
-    vinyl(T, R, 0.35, 0.0025);
-    return reverb(lowpassTrack(T, 4000), 0.15);
+    padBed(T, Array.from({ length: bars }, (_, k) => chordAt(prog, k).v), bar, 0.035);
+    vinyl(T, R, 0.3, 0.002);
+    return finishMusic(reverb(T, 0.18), 6.4);
   },
 
   // 60 BPM, 16 bars = 64 s. Quiet piano: a slow broken chord and one or two melody notes a bar.
@@ -299,7 +314,8 @@ const pieces = {
         T.put(piano(m, d * beat + 0.4, 0.55), t0 + tb * beat + human(R, 0.03), 0.17, 0.6);
       });
     }
-    return reverb(lowpassTrack(T, 4800), 0.42, 0.87, 0.35);
+    padBed(T, Array.from({ length: bars }, (_, k) => chordAt(prog, k).tones.slice(1, 3).map((m) => m + 12)), bar, 0.05, 900);
+    return finishMusic(reverb(T, 0.42, 0.87, 0.35), 6.4, 5500);
   },
 
   // 80 BPM, 20 bars = 60 s. Am9 | Fmaj7 | Cmaj7 | G6: a hazy pad, a few soft notes, a faint heartbeat kick.
@@ -317,19 +333,18 @@ const pieces = {
       const c = chordAt(prog, k);
       const t0 = k * bar;
       c.v.forEach((m, i) => pads.put(pad(m, bar - 0.2, 0.7, 2), t0, 0.1, 0.3 + i * 0.13));
-      T.put(bass(c.b, bar * 0.7, 0.6), t0, 0.26, 0.5);
+      T.put(bass(c.b, bar * 0.7, 0.6), t0, 0.18, 0.5);
       // two or three soft notes per bar, never busy
       const spots = [0, 1.5, 2, 3].filter(() => R() < 0.55).slice(0, 3);
-      spots.forEach((b) => T.put(epiano(c.v[Math.floor(R() * 4)] + 12, 0.5, 0.35), t0 + b * beat + human(R, 0.01), 0.06, 0.3 + R() * 0.4));
+      spots.forEach((b) => T.put(epiano(c.v[Math.floor(R() * 4)] + 12, 0.5, 0.35), t0 + b * beat + human(R, 0.01), 0.11, 0.3 + R() * 0.4));
       if (k % 5 !== 4) {
-        T.put(kick(R, 0.6), t0, 0.18, 0.5);
-        T.put(brush(R, 0.6, 0.12), t0 + 2 * beat, 0.05, 0.45);
+        T.put(kick(R, 0.6), t0, 0.08, 0.5);
       }
     }
-    lowpassTrack(pads, 1100);
+    lowpassTrack(pads, 1600);
     T.mix(pads);
-    vinyl(T, R, 0.6, 0.0035);
-    return reverb(lowpassTrack(T, 3000), 0.3);
+    vinyl(T, R, 0.5, 0.003);
+    return finishMusic(reverb(T, 0.3), 6);
   },
 
   // 80 BPM, 20 bars = 60 s. Dm9 | G13 | Cmaj9 | A7b9 in a slow two-feel, brushes barely there.
@@ -346,17 +361,16 @@ const pieces = {
     for (let k = 0; k < bars; k++) {
       const c = chordAt(prog, k);
       const t0 = k * bar;
-      c.two.forEach((m, i) => T.put(bass(m, beat * 1.8, 0.75), t0 + i * 2 * beat + human(R, 0.01), 0.36, 0.45));
+      c.two.forEach((m, i) => T.put(bass(m, beat * 1.8, 0.75), t0 + i * 2 * beat + human(R, 0.01), 0.22, 0.45));
       const at = R() < 0.5 ? 0 : 1 + sw;
-      c.v.forEach((m, i) => keys.put(epiano(m, beat * 2.2, 0.38), t0 + at * beat + human(R) + i * 0.012, 0.14, 0.6 + i * 0.05));
-      for (let b = 0; b < 4; b++) T.put(brush(R, 0.35, 0.55), t0 + b * beat, 0.03, 0.4);
-      T.put(brush(R, 0.6, 0.12), t0 + 1 * beat, 0.045, 0.38);
-      T.put(brush(R, 0.6, 0.12), t0 + 3 * beat, 0.045, 0.38);
+      c.v.forEach((m, i) => keys.put(epiano(m, beat * 2.2, 0.38), t0 + at * beat + human(R) + i * 0.012, 0.26, 0.6 + i * 0.05));
+      for (let b = 0; b < 4; b++) T.put(brush(R, 0.3, 0.55), t0 + b * beat, 0.012, 0.4); // the faintest brush swish
     }
-    lowpassTrack(keys, 2600);
+    lowpassTrack(keys, 4200);
     T.mix(reverb(keys, 0.32));
+    padBed(T, Array.from({ length: bars }, (_, k) => chordAt(prog, k).v), bar, 0.03);
     vinyl(T, R, 0.2, 0.002);
-    return reverb(lowpassTrack(T, 4000), 0.2);
+    return finishMusic(reverb(T, 0.2), 6);
   },
 
   // 72 BPM, 24 bars = 80 s. A slow 12-bar in A: held chords, a soft bass note, a rare guitar phrase.
@@ -382,13 +396,12 @@ const pieces = {
           T.put(string(pent[i], beat * 1.2, 0.6, R, 0.45), t0 + (2 + q * sw * 1.5) * beat + human(R, 0.015), 0.12, 0.66);
         }
       }
-      T.put(brush(R, 0.6, 0.14), t0 + 1 * beat, 0.04, 0.45);
-      T.put(brush(R, 0.6, 0.14), t0 + 3 * beat, 0.04, 0.45);
     }
     lowpassTrack(keys, 2200);
     T.mix(reverb(keys, 0.3));
-    vinyl(T, R, 0.25, 0.002);
-    return reverb(lowpassTrack(T, 3800), 0.25);
+    padBed(T, Array.from({ length: bars }, (_, k) => form[k % 12].v), bar, 0.05);
+    vinyl(T, R, 0.2, 0.002);
+    return finishMusic(reverb(T, 0.25), 80 / 12);
   },
 
   // ---------- background sounds ----------
