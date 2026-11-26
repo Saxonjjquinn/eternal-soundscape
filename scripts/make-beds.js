@@ -276,7 +276,7 @@ fs.mkdirSync(outDir, { recursive: true });
 const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'beds-'));
 
 const only = process.argv.slice(2);
-THEMES.filter((t) => !only.length || only.includes(t.id)).forEach((theme) => {
+THEMES.filter((t) => t.gen !== 'music' && (!only.length || only.includes(t.id))).forEach((theme) => {
   const recipe = recipes[theme.id];
   if (!recipe) throw new Error(`No recipe for ${theme.id}`);
   const seed = [...theme.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);

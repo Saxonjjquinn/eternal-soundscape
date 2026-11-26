@@ -46,7 +46,7 @@
     list.innerHTML = '';
     let items = config.examples;
     if (!items.length) {
-      $('#examplesNote').textContent = 'Here is the ambience of each free sound. Your children\'s voices drift in and out over the top, and the ambience softens while they speak.';
+      $('#examplesNote').textContent = 'Here are the free sounds on their own. Your children\'s voices drift in and out over the top, and the ambience softens while they speak.';
       items = config.themes.filter((t) => t.free).map((t) => ({ title: t.name, subtitle: 'Ambience only', theme: t.id, src: `/beds/${t.id}.mp3` }));
     } else {
       $('#examplesNote').textContent = 'Real soundscapes made with Little Echoes (shared with permission).';
@@ -67,16 +67,29 @@
   // ---------- sounds (layers) ----------
   function renderThemes() {
     const max = tier().maxLayers;
-    $('#layerHint').innerHTML = `Pick up to ${max} sounds to layer together. They drift in one at a time, and you can set how loud each one is. `;
+    $('#layerHint').innerHTML = `Layer up to ${max} sounds: some music, background sounds, or both. They drift in one at a time, and you can set how loud each one is. `;
     if (!state.plus) {
       const up = document.createElement('button');
       up.type = 'button'; up.className = 'upsell'; up.textContent = 'Layer 3 sounds with Plus';
       up.addEventListener('click', openPlus);
       $('#layerHint').appendChild(up);
     }
-    const wrap = $('#themes');
-    wrap.innerHTML = '';
+    const outer = $('#themes');
+    outer.innerHTML = '';
+    const groups = {};
+    [['music', 'Music', 'Pick one piece of music, or none.'], ['ambience', 'Background sounds', 'Mix these freely, with or without music.']].forEach(([kind, title, sub]) => {
+      const h = document.createElement('div');
+      h.className = 'group-head';
+      h.innerHTML = `<h3></h3><span class="muted small"></span>`;
+      h.querySelector('h3').textContent = title;
+      h.querySelector('span').textContent = sub;
+      const g = document.createElement('div');
+      g.className = 'themes';
+      outer.append(h, g);
+      groups[kind] = g;
+    });
     config.themes.forEach((t) => {
+      const wrap = groups[t.kind] || groups.ambience;
       const locked = !t.free && !state.plus;
       const idx = state.layers.findIndex((l) => l.id === t.id);
       const on = idx >= 0;
@@ -106,7 +119,9 @@
       }
       const toggle = () => {
         if (locked) return openPlus();
+        const otherMusic = t.kind === 'music' && !on ? state.layers.findIndex((l) => themeById(l.id).kind === 'music') : -1;
         if (on) state.layers.splice(idx, 1);
+        else if (otherMusic >= 0) state.layers.splice(otherMusic, 1); // swap music rather than stack it
         else if (state.layers.length >= max) {
           if (max === 1) state.layers = [];
           else return showError(state.plus ? `You can layer up to ${max} sounds. Tap one to remove it first.` : `The free plan layers ${max} sounds. Tap one to remove it, or unlock Plus for 3.`);
@@ -445,7 +460,7 @@
     // keep choices valid for the tier
     if (!on) state.layers = state.layers.filter((l) => themeById(l.id).free);
     state.layers = state.layers.slice(0, tier().maxLayers);
-    if (!state.layers.length) state.layers = [{ id: config.themes.find((t) => t.free).id, volume: 0.85 }];
+    if (!state.layers.length) state.layers = [{ id: config.themes.find((t) => t.free && t.kind === 'ambience').id, volume: 0.85 }];
     if (state.minutes > tier().maxMinutes) state.minutes = tier().maxMinutes;
     while (state.clips.length > tier().maxClips) { const c = state.clips.pop(); if (c.url) URL.revokeObjectURL(c.url); }
     renderThemes(); renderLengths(); renderClips();

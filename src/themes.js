@@ -1,14 +1,26 @@
-// Sound catalogue. Each sound is a looping ambient bed in public/beds/<id>.mp3.
-// People layer up to `maxLayers` of them. `free: false` sounds need Plus.
+// Sound catalogue. Each sound is a loop in public/beds/<id>.mp3.
+// People layer up to `maxLayers` of them, at most one of kind 'music'.
+// `free: false` sounds need Plus. `gen: 'music'` ones come from scripts/make-music.js.
 const THEMES = [
-  { id: 'gentle-rain', name: 'Gentle Rain', blurb: 'Soft rain on the window with a warm hum underneath.', free: true, colors: ['#5b7a99', '#a9c1d9'] },
-  { id: 'ocean-waves', name: 'Ocean Waves', blurb: 'Slow waves rolling in and drawing back.', free: true, colors: ['#2f6f7e', '#9fd3d6'] },
-  { id: 'lullaby-glow', name: 'Lullaby Glow', blurb: 'A soft pad with music-box notes, like a nightlight.', free: true, colors: ['#8a6fa8', '#e8c9e0'] },
-  { id: 'music-box', name: 'Music Box', blurb: 'A few slow, twinkling notes and nothing else.', free: true, colors: ['#b0697f', '#f4cdd4'] },
-  { id: 'forest-morning', name: 'Forest Morning', blurb: 'A light breeze and birds waking up.', free: false, colors: ['#4f7a4a', '#c8dca4'] },
-  { id: 'cosy-fireplace', name: 'Cosy Fireplace', blurb: 'A low crackling fire on a winter evening.', free: false, colors: ['#9a4f2c', '#f0c48a'] },
-  { id: 'starry-night', name: 'Starry Night', blurb: 'Crickets and a slow, starlit hum.', free: false, colors: ['#26305c', '#8d93c9'] },
-  { id: 'soft-wind', name: 'Soft Wind', blurb: 'Air moving gently through an open window.', free: false, colors: ['#6b7f8e', '#d5dee4'] },
+  // ---- music (only one piece at a time, so keys and tempos never clash) ----
+  { id: 'classical-piano', kind: 'music', gen: 'music', name: 'Classical Piano', blurb: 'Slow, rolling piano with a simple melody.', free: true, colors: ['#5d5a7a', '#d9d2e9'] },
+  { id: 'lofi-jazz-house', kind: 'music', gen: 'music', name: 'Lo-fi Jazz House', blurb: 'Warm keys over a soft, steady four-on-the-floor.', free: true, colors: ['#3e6e75', '#e3c9a1'] },
+  { id: 'lullaby-glow', kind: 'music', name: 'Lullaby Glow', blurb: 'A soft pad with music-box notes, like a nightlight.', free: true, colors: ['#8a6fa8', '#e8c9e0'] },
+  { id: 'music-box', kind: 'music', name: 'Music Box', blurb: 'A few slow, twinkling notes and nothing else.', free: true, colors: ['#b0697f', '#f4cdd4'] },
+  { id: 'lofi-electronic', kind: 'music', gen: 'music', name: 'Lo-fi Electronic', blurb: 'Hazy chords, a gentle arpeggio and a lazy beat.', free: false, colors: ['#4a4f8c', '#e7a7c8'] },
+  { id: 'late-night-jazz', kind: 'music', gen: 'music', name: 'Late-Night Jazz', blurb: 'Brushes, walking bass and soft electric piano.', free: false, colors: ['#2e3b4e', '#d8b26e'] },
+  { id: 'slow-blues', kind: 'music', gen: 'music', name: 'Slow Blues', blurb: 'An easy shuffle with a little guitar.', free: false, colors: ['#2c4a7a', '#9cc0e8'] },
+
+  // ---- background sounds (mix freely) ----
+  { id: 'gentle-rain', kind: 'ambience', name: 'Gentle Rain', blurb: 'Soft rain on the window with a warm hum underneath.', free: true, colors: ['#5b7a99', '#a9c1d9'] },
+  { id: 'ocean-waves', kind: 'ambience', name: 'Ocean Waves', blurb: 'Slow waves rolling in and drawing back.', free: true, colors: ['#2f6f7e', '#9fd3d6'] },
+  { id: 'distant-birds', kind: 'ambience', gen: 'music', name: 'Distant Birds', blurb: 'Birds faintly calling somewhere outside.', free: true, colors: ['#6f8f5e', '#dfe8c4'] },
+  { id: 'fan-hum', kind: 'ambience', gen: 'music', name: 'Fan', blurb: 'The steady whoosh of a fan in the corner.', free: true, colors: ['#6d7a84', '#cfd8de'] },
+  { id: 'little-footsteps', kind: 'ambience', gen: 'music', name: 'Little Footsteps', blurb: 'Small feet pattering through the house now and then.', free: false, colors: ['#a0745a', '#f1d7c0'] },
+  { id: 'forest-morning', kind: 'ambience', name: 'Forest Morning', blurb: 'A light breeze and birds waking up.', free: false, colors: ['#4f7a4a', '#c8dca4'] },
+  { id: 'cosy-fireplace', kind: 'ambience', name: 'Cosy Fireplace', blurb: 'A low crackling fire on a winter evening.', free: false, colors: ['#9a4f2c', '#f0c48a'] },
+  { id: 'starry-night', kind: 'ambience', name: 'Starry Night', blurb: 'Crickets and a slow, starlit hum.', free: false, colors: ['#26305c', '#8d93c9'] },
+  { id: 'soft-wind', kind: 'ambience', name: 'Soft Wind', blurb: 'Air moving gently through an open window.', free: false, colors: ['#6b7f8e', '#d5dee4'] },
 ];
 
 // Small one-off sounds scattered in the quiet stretches between voices.

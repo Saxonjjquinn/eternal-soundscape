@@ -47,7 +47,7 @@ A 3 minute mix takes about 5 seconds on a small server.
 
 ## Ambient sounds
 
-All eight beds in `public/beds/` and the moments in `public/moments/` are **synthesised from scratch** by `scripts/make-beds.js` (noise, filters, sine pads, generated bird chirps and crackles), so there are no licensing questions. Each is a seamless 60 second loop. To regenerate after editing a recipe: `npm run beds`. To add a theme, add it to `src/themes.js` and a matching recipe in `scripts/make-beds.js`. You could also swap in recorded beds (for example CC0 field recordings) by dropping a 60 second loopable MP3 at `public/beds/<theme-id>.mp3`.
+All sounds in `public/beds/` and the moments in `public/moments/` are **synthesised from scratch** by `scripts/make-beds.js` (noise, filters, sine pads, generated bird chirps and crackles), so there are no licensing questions. Each is a seamless 60 second loop. The music (Classical Piano, Lo-fi Jazz House, Lo-fi Electronic, Late-Night Jazz, Slow Blues) and the newer background sounds (Distant Birds, Fan, Little Footsteps) are composed in code by `scripts/make-music.js`: FM electric piano, additive piano, Karplus-Strong guitar, synth bass and brushes, with reverb and a little vinyl warmth. Each is an exact loop with a whole number of bars. Only one piece of music can be chosen at a time so keys never clash. To regenerate after editing a recipe: `npm run beds`. To add a theme, add it to `src/themes.js` and a matching recipe in `scripts/make-beds.js`. You could also swap in recorded beds (for example CC0 field recordings) by dropping a 60 second loopable MP3 at `public/beds/<theme-id>.mp3`.
 
 ## Real examples
 

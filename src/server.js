@@ -83,6 +83,7 @@ app.post('/api/soundscapes', upload.array('clips'), async (req, res) => {
     layers = layers.slice(0, 3).map((l) => ({ theme: THEMES.find((t) => t.id === l.id), volume: Math.max(0.05, Math.min(1, Number(l.volume) || 0.8)) }));
     if (!layers.length || layers.some((l) => !l.theme)) throw new Error('Please choose at least one sound.');
     if (new Set(layers.map((l) => l.theme.id)).size !== layers.length) throw new Error('Each sound can only be used once.');
+    if (layers.filter((l) => l.theme.kind === 'music').length > 1) throw new Error('Choose one piece of music. You can add background sounds alongside it.');
     if (layers.length > tier.maxLayers) throw new Error(`You can layer up to ${tier.maxLayers} sounds${tierName === 'free' ? ' on the free plan' : ''}.`);
     const locked = layers.find((l) => !l.theme.free && tierName !== 'plus');
     if (locked) throw new Error(`${locked.theme.name} is a Plus sound.`);
